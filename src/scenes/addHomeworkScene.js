@@ -23,18 +23,31 @@ const addHomeworkScene = new Scenes.WizardScene(
       '📚 Введите название предмета, по которому хотите добавить домашнее задание:',
       {
         reply_markup: {
-          force_reply: true,
-          input_field_placeholder: 'Например: Математика'
+          inline_keyboard: [
+            [{ text: '❌ Отменить', callback_data: 'homework_cancel' }]
+          ]
         }
       }
     );
     return ctx.wizard.next();
   },
   async (ctx) => {
-    // Обработка callback_query (кнопка "Вернуться в меню")
-    if (ctx.callbackQuery && ctx.callbackQuery.data === 'back_to_menu') {
+    // Обработка callback_query
+    if (ctx.callbackQuery) {
       await ctx.answerCbQuery();
-      return ctx.scene.leave();
+      const action = ctx.callbackQuery.data;
+
+      if (action === 'back_to_menu' || action === 'homework_cancel') {
+        await ctx.reply('❌ Действие отменено.', {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]
+            ]
+          }
+        });
+        return ctx.scene.leave();
+      }
+      return;
     }
 
     // Проверяем, что это текстовое сообщение
@@ -78,8 +91,9 @@ const addHomeworkScene = new Scenes.WizardScene(
         `📝 Теперь введите текст домашнего задания:`,
         {
           reply_markup: {
-            force_reply: true,
-            input_field_placeholder: 'Например: Упражнение 15-20, стр. 45'
+            inline_keyboard: [
+              [{ text: '❌ Отменить', callback_data: 'homework_cancel' }]
+            ]
           }
         }
       );
@@ -100,10 +114,22 @@ const addHomeworkScene = new Scenes.WizardScene(
     }
   },
   async (ctx) => {
-    // Обработка callback_query (кнопка "Вернуться в меню")
-    if (ctx.callbackQuery && ctx.callbackQuery.data === 'back_to_menu') {
+    // Обработка callback_query
+    if (ctx.callbackQuery) {
       await ctx.answerCbQuery();
-      return ctx.scene.leave();
+      const action = ctx.callbackQuery.data;
+
+      if (action === 'back_to_menu' || action === 'homework_cancel') {
+        await ctx.reply('❌ Действие отменено.', {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]
+            ]
+          }
+        });
+        return ctx.scene.leave();
+      }
+      return;
     }
 
     // Проверяем, что это текстовое сообщение
@@ -116,7 +142,13 @@ const addHomeworkScene = new Scenes.WizardScene(
     const { scheduleId, date, subjectName } = ctx.wizard.state;
 
     if (!content || content.length === 0) {
-      await ctx.reply('❌ Текст домашнего задания не может быть пустым. Попробуйте еще раз:');
+      await ctx.reply('❌ Текст домашнего задания не может быть пустым. Попробуйте еще раз:', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '❌ Отменить', callback_data: 'homework_cancel' }]
+          ]
+        }
+      });
       return; // Остаемся на том же шаге
     }
 
