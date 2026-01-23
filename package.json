@@ -1,0 +1,29 @@
+{
+  "name": "tgdomashkabot",
+  "version": "1.0.0",
+  "description": "Telegram бот для ведения домашнего задания",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "migrate": "node src/database/migrate.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "homework",
+    "diary"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "telegraf": "^4.15.0",
+    "sequelize": "^6.35.0",
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
