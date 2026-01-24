@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "migrate": "node src/database/migrate.js"
+    "migrate": "node src/database/migrate.js",
+    "export-db": "node scripts/export-db.js",
+    "import-db": "node scripts/import-db.js"
   },
   "keywords": [
     "telegram",

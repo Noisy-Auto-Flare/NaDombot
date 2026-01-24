@@ -65,7 +65,51 @@ docker compose -f docker-compose.sqlite.yml pull
 docker compose -f docker-compose.sqlite.yml up -d --build
 ```
 
-Переход с Postgres на SQLite: данные не переносятся автоматически. Нужно либо начать с пустой БД, либо вручную экспорт/импорт.
+---
+
+## Переключение между Postgres и SQLite без потери данных
+
+Данные в Postgres (том `postgres_data`) и в SQLite (том `sqlite_data`) хранятся по-разному. При смене варианта (другой `docker-compose` или другие переменные) **автоматического переноса нет** — нужно один раз экспорт и импорт.
+
+### 1. Экспорт из текущей БД (в файл на хосте)
+
+**Если бот на Postgres:**
+```bash
+docker compose exec bot node scripts/export-db.js > export.json
+```
+
+**Если бот на SQLite:**
+```bash
+docker compose -f docker-compose.sqlite.yml exec bot node scripts/export-db.js > export.json
+```
+
+### 2. Остановка и запуск на другой БД
+
+Пример: перейти с Postgres на SQLite.
+
+```bash
+# Остановить текущий вариант (без -v, тома не трогаем)
+docker compose down
+
+# Запустить на SQLite
+docker compose -f docker-compose.sqlite.yml up -d --build
+```
+
+### 3. Импорт в новую БД
+
+**Если теперь бот на Postgres:**
+```bash
+docker compose exec -T bot node scripts/import-db.js --yes < export.json
+```
+
+**Если теперь бот на SQLite:**
+```bash
+docker compose -f docker-compose.sqlite.yml exec -T bot node scripts/import-db.js --yes < export.json
+```
+
+Импорт **полностью заменяет** расписание и домашние задания в целевой БД. Без `--yes` скрипт только печатает, что будет импортировано, и не меняет данные.
+
+Итого: можно периодически переключаться с одной базы на другую, каждый раз делая экспорт → смену compose → импорт, без потери данных.
 
 ---
 
