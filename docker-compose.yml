@@ -1,5 +1,5 @@
 services:
-  # Сервис базы данных PostgreSQL
+  # PostgreSQL — настройки для малой нагрузки на VPS
   postgres:
     image: postgres:15-alpine
     container_name: homework_postgres
@@ -8,21 +8,46 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
-      # Постоянное хранилище для данных БД
+      # Именованный том — данные не теряются при docker compose up/down (не использовать down -v!)
       - postgres_data:/var/lib/postgresql/data
     ports:
-      # Опционально: открываем порт для внешнего доступа
       - "${DB_PORT:-5432}:5432"
+    mem_limit: 256m
+    memswap_limit: 128m
+    shm_size: 64mb
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - work_mem=1MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=96MB
+      - -c
+      - max_connections=20
+      - -c
+      - wal_buffers=64kB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - synchronous_commit=off
+      - -c
+      - idle_in_transaction_session_timeout=60000
+      - -c
+      - jit=off
+      - -c
+      - autovacuum_naptime=5min
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
     networks:
       - homework_network
     restart: unless-stopped
 
-  # Сервис Telegram бота
   bot:
     build:
       context: .
@@ -45,7 +70,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  # Именованный том для данных PostgreSQL
   postgres_data:
 
 networks:
