@@ -21,6 +21,7 @@
     "sequelize": "^6.35.0",
     "pg": "^8.11.3",
     "pg-hstore": "^2.3.4",
+    "sqlite3": "^5.1.7",
     "dotenv": "^16.3.1"
   },
   "devDependencies": {

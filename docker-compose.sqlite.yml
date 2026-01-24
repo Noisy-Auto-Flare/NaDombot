@@ -1,0 +1,28 @@
+# Вариант без Postgres: SQLite, почти нулевая нагрузка на CPU/RAM в простое.
+# Запуск: docker compose -f docker-compose.sqlite.yml up -d --build
+# Миграция с Postgres: сначала экспортируйте данные из Postgres, потом при необходимости импортируйте в SQLite.
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homework_bot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      ADMIN_ID: ${ADMIN_ID}
+      USE_SQLITE: "true"
+      SQLITE_PATH: /app/data/db.sqlite
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - sqlite_data:/app/data
+    networks:
+      - homework_network
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
+
+networks:
+  homework_network:
+    driver: bridge

@@ -18,27 +18,41 @@ services:
     command:
       - postgres
       - -c
-      - shared_buffers=32MB
+      - shared_buffers=16MB
       - -c
-      - work_mem=1MB
+      - work_mem=512kB
       - -c
-      - maintenance_work_mem=32MB
+      - maintenance_work_mem=16MB
       - -c
-      - effective_cache_size=96MB
+      - effective_cache_size=64MB
       - -c
-      - max_connections=20
+      - max_connections=10
       - -c
       - wal_buffers=64kB
       - -c
       - checkpoint_completion_target=0.9
+      - -c
+      - checkpoint_timeout=30min
       - -c
       - synchronous_commit=off
       - -c
       - idle_in_transaction_session_timeout=60000
       - -c
       - jit=off
+      # Реже буферизация на диск — меньше пробуждений
       - -c
-      - autovacuum_naptime=5min
+      - bgwriter_delay=1000ms
+      - -c
+      - bgwriter_lru_maxpages=5
+      # Реже autovacuum и только при большом % мёртвых строк
+      - -c
+      - autovacuum_naptime=15min
+      - -c
+      - autovacuum_vacuum_scale_factor=0.5
+      - -c
+      - autovacuum_analyze_scale_factor=0.25
+      - -c
+      - autovacuum_vacuum_cost_delay=50ms
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 30s
