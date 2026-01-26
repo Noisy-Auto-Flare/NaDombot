@@ -64,6 +64,7 @@ async function startBot() {
     process.once('SIGTERM', () => bot.stop('SIGTERM'));
   } catch (error) {
     console.error('Ошибка при запуске бота:', error);
+    console.error('Stack:', error.stack);
     process.exit(1);
   }
 }

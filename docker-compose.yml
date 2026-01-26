@@ -13,7 +13,7 @@ services:
     ports:
       - "${DB_PORT:-5432}:5432"
     mem_limit: 256m
-    memswap_limit: 128m
+    memswap_limit: 256m
     shm_size: 64mb
     command:
       - postgres

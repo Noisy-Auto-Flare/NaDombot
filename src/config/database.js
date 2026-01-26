@@ -8,11 +8,29 @@ const useSqlite = process.env.USE_SQLITE === 'true' || process.env.DB_DIALECT ==
 let sequelize;
 
 if (useSqlite) {
-  const dir = path.dirname(process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'db.sqlite'));
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+  const sqlitePath = process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'db.sqlite');
+  const dir = path.dirname(sqlitePath);
+  
+  // Создаём директорию, если её нет
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+  } catch (err) {
+    if (err.code !== 'EEXIST') {
+      console.error('Ошибка при создании директории для SQLite:', err.message);
+    }
+  }
+  
+  // Проверяем права на запись
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch (err) {
+    console.error(`Нет прав на запись в директорию ${dir}. Проверьте права доступа.`);
+    process.exit(1);
+  }
+  
   sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'db.sqlite'),
+    storage: sqlitePath,
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: { max: 1, min: 0 }
   });

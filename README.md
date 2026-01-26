@@ -58,7 +58,28 @@ SQLite не держит фоновых процессов (autovacuum, bgwriter
 docker compose -f docker-compose.sqlite.yml up -d --build
 ```
 
-Данные — в томе `sqlite_data` (файл `/app/data/db.sqlite`). Обновление без потери данных:
+Данные — в томе `sqlite_data` (файл `/app/data/db.sqlite`).
+
+**Если контейнер постоянно перезапускается:**
+
+1. Проверьте логи: `docker compose -f docker-compose.sqlite.yml logs bot`
+2. Если ошибка про права доступа к `/app/data`:
+   ```bash
+   # Остановите контейнер
+   docker compose -f docker-compose.sqlite.yml down
+   
+   # Удалите том (данные потеряются!)
+   docker volume rm tgdomashkabot_sqlite_data
+   
+   # Запустите заново — том создастся с правильными правами
+   docker compose -f docker-compose.sqlite.yml up -d --build
+   ```
+3. Или исправьте права вручную (если нужно сохранить данные):
+   ```bash
+   docker compose -f docker-compose.sqlite.yml run --rm --user root bot chown -R nodejs:nodejs /app/data
+   ```
+
+Обновление без потери данных:
 
 ```bash
 docker compose -f docker-compose.sqlite.yml pull
