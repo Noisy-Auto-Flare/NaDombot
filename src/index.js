@@ -15,7 +15,8 @@ const {
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,
-  handleBackToMenu
+  handleBackToMenu,
+  handleToggleHomeworkVisibility
 } = require('./handlers/commands');
 
 // Регистрация сцен
@@ -32,6 +33,7 @@ bot.action('homework_tomorrow', handleHomeworkTomorrow);
 bot.action('homework_week', handleHomeworkWeek);
 bot.action('manage_schedule', handleManageSchedule);
 bot.action('back_to_menu', handleBackToMenu);
+bot.action('toggle_hw_visibility', handleToggleHomeworkVisibility);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {

@@ -1,6 +1,7 @@
 const { Markup } = require('telegraf');
 const { getHomeworkForDate, getHomeworkForWeek, formatHomework } = require('../utils/scheduleUtils');
 const { getNextDay, getNextWorkDay, formatDate, getDayName, getDayOfWeek } = require('../utils/dateUtils');
+const { toggleHomeworkVisibility, getHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
 
 /**
  * Обработчики команд бота
@@ -19,7 +20,12 @@ async function handleStart(ctx) {
   ];
 
   if (isAdmin) {
-    keyboard.push([{ text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }]);
+    keyboard.push([
+      { text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }
+    ]);
+    keyboard.push([
+      { text: '👥 Режим домашнего задания', callback_data: 'toggle_hw_visibility' }
+    ]);
   }
 
   await ctx.reply(
@@ -203,6 +209,36 @@ async function handleManageSchedule(ctx) {
 }
 
 /**
+ * Переключение режима видимости домашнего задания (только для админа)
+ * personal — у каждого своё; shared — общее для всех.
+ */
+async function handleToggleHomeworkVisibility(ctx) {
+  const isAdmin = ctx.from.id.toString() === process.env.ADMIN_ID;
+
+  if (!isAdmin) {
+    await ctx.answerCbQuery('❌ У вас нет прав администратора');
+    return;
+  }
+
+  await ctx.answerCbQuery();
+
+  const newMode = await toggleHomeworkVisibility();
+  const label = getHomeworkVisibilityLabel(newMode);
+
+  await ctx.reply(
+    `👥 Режим домашнего задания переключён.\n\n` +
+    `Теперь домашнее задание: ${label}.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]
+        ]
+      }
+    }
+  );
+}
+
+/**
  * Обработчик кнопки "Вернуться в меню"
  */
 async function handleBackToMenu(ctx) {
@@ -217,5 +253,6 @@ module.exports = {
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,
-  handleBackToMenu
+  handleBackToMenu,
+  handleToggleHomeworkVisibility
 };

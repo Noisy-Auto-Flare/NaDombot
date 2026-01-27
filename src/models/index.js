@@ -1,5 +1,6 @@
 const Schedule = require('./Schedule');
 const Homework = require('./Homework');
+const Setting = require('./Setting');
 
 // Определение связей между моделями
 Homework.belongsTo(Schedule, {
@@ -14,5 +15,7 @@ Schedule.hasMany(Homework, {
 
 module.exports = {
   Schedule,
-  Homework
+  Homework,
+  Setting
 };
+

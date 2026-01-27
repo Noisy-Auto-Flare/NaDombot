@@ -1,5 +1,6 @@
 const { Schedule } = require('../models');
 const { getDayOfWeek, getNextDayOfWeek, formatDate, getDayName } = require('./dateUtils');
+const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
 
 /**
  * Утилиты для работы с расписанием
@@ -74,21 +75,29 @@ async function getWeeklySchedule() {
 }
 
 /**
- * Получить домашнее задание на конкретную дату
+ * Получить домашнее задание на конкретную дату.
+ * Если режим personal — показываем ДЗ только текущего пользователя.
+ * Если режим shared  — показываем ДЗ всех пользователей.
  */
 async function getHomeworkForDate(userId, date) {
   const { Homework } = require('../models');
   const dayOfWeek = getDayOfWeek(date);
-  
+
   // Получаем расписание на этот день
   const schedules = await getScheduleForDay(dayOfWeek);
-  
-  // Получаем домашние задания
+
+  const visibility = await getHomeworkVisibility();
+  const where = {
+    date: date.toISOString().split('T')[0]
+  };
+
+  // В личном режиме фильтруем по userId, в общем — нет
+  if (visibility !== HOMEWORK_VISIBILITY_SHARED) {
+    where.userId = userId;
+  }
+
   const homeworks = await Homework.findAll({
-    where: {
-      userId: userId,
-      date: date.toISOString().split('T')[0]
-    },
+    where,
     include: [{
       model: Schedule,
       as: 'schedule'
@@ -97,9 +106,9 @@ async function getHomeworkForDate(userId, date) {
   });
 
   return {
-    date: date,
-    schedules: schedules,
-    homeworks: homeworks
+    date,
+    schedules,
+    homeworks
   };
 }
 
