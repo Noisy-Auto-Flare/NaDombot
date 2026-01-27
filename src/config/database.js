@@ -63,6 +63,31 @@ async function testConnection() {
 
 // Функция для синхронизации моделей с БД
 async function syncDatabase() {
+  // Для sqlite: попробуем удалить старые проблемные уникальные индексы
+  // (например, уникальный индекс только на `dayOfWeek`), чтобы избежать
+  // ошибок при выполнении ALTER TABLE через механизм создания backup-таблицы.
+  if (sequelize.getDialect && sequelize.getDialect() === 'sqlite') {
+    try {
+      const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT });
+      for (const idx of indexes) {
+        // В sqlite поле unique возвращается как 1/0
+        if (idx.unique) {
+          const idxName = idx.name;
+          const cols = await sequelize.query(`PRAGMA index_info('${idxName}')`, { type: Sequelize.QueryTypes.SELECT });
+          if (Array.isArray(cols) && cols.length === 1 && cols[0].name === 'dayOfWeek') {
+            console.log(`Удаляю проблемный индекс ${idxName} (уникальный на dayOfWeek)`);
+            try {
+              await sequelize.query(`DROP INDEX IF EXISTS ${idxName};`);
+            } catch (dropErr) {
+              console.warn('Не удалось удалить индекс', idxName, dropErr);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Не удалось получить список индексов schedules:', e.message || e);
+    }
+  }
   try {
     await sequelize.sync({ alter: true });
     console.log('✅ Модели синхронизированы с базой данных.');
