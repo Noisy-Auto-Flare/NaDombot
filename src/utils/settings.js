@@ -10,13 +10,18 @@ const HOMEWORK_VISIBILITY_SHARED = 'shared';
  * shared  — общее, видно всем
  */
 async function getHomeworkVisibility() {
-  const setting = await Setting.findByPk(HOMEWORK_VISIBILITY_KEY);
-  if (!setting) {
+  try {
+    const setting = await Setting.findByPk(HOMEWORK_VISIBILITY_KEY);
+    if (!setting) {
+      return HOMEWORK_VISIBILITY_PERSONAL;
+    }
+    return setting.value === HOMEWORK_VISIBILITY_SHARED
+      ? HOMEWORK_VISIBILITY_SHARED
+      : HOMEWORK_VISIBILITY_PERSONAL;
+  } catch (err) {
+    console.error('Ошибка при получении настройки видимости:', err);
     return HOMEWORK_VISIBILITY_PERSONAL;
   }
-  return setting.value === HOMEWORK_VISIBILITY_SHARED
-    ? HOMEWORK_VISIBILITY_SHARED
-    : HOMEWORK_VISIBILITY_PERSONAL;
 }
 
 /**
@@ -27,10 +32,15 @@ async function setHomeworkVisibility(mode) {
     ? HOMEWORK_VISIBILITY_SHARED
     : HOMEWORK_VISIBILITY_PERSONAL;
 
-  await Setting.upsert({
-    key: HOMEWORK_VISIBILITY_KEY,
-    value: normalized
-  });
+  try {
+    await Setting.upsert({
+      key: HOMEWORK_VISIBILITY_KEY,
+      value: normalized
+    });
+  } catch (err) {
+    console.error('Ошибка при сохранении настройки видимости:', err);
+    // persist failed — still return normalized value so callers have a deterministic result
+  }
 
   return normalized;
 }
