@@ -67,7 +67,21 @@ async function syncDatabase() {
     await sequelize.sync({ alter: true });
     console.log('✅ Модели синхронизированы с базой данных.');
   } catch (error) {
-    console.error('❌ Ошибка синхронизации:', error.message);
+    console.error('❌ Ошибка синхронизации:', error);
+
+    // Попытка безопасно восстановить отсутствующие таблицы по-отдельности.
+    try {
+      // Подключаем модели динамически, чтобы гарантировать их регистрацию в sequelize
+      const { Setting, Schedule, Homework } = require('../models');
+
+      // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
+      await Setting.sync();
+      await Schedule.sync();
+      await Homework.sync();
+      console.log('✅ Отдельные таблицы созданы/синхронизированы (fallback).');
+    } catch (fallbackErr) {
+      console.error('❌ Fallback синхронизации моделей не удался:', fallbackErr);
+    }
   }
 }
 
