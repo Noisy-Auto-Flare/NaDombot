@@ -3,51 +3,32 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-const useSqlite = process.env.USE_SQLITE === 'true' || process.env.DB_DIALECT === 'sqlite';
+const sqlitePath = process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'db.sqlite');
+const dir = path.dirname(sqlitePath);
 
-let sequelize;
-
-if (useSqlite) {
-  const sqlitePath = process.env.SQLITE_PATH || path.join(process.cwd(), 'data', 'db.sqlite');
-  const dir = path.dirname(sqlitePath);
-  
-  // Создаём директорию, если её нет
-  try {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
-  } catch (err) {
-    if (err.code !== 'EEXIST') {
-      console.error('Ошибка при создании директории для SQLite:', err.message);
-    }
+// Создаём директорию, если её нет
+try {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+} catch (err) {
+  if (err.code !== 'EEXIST') {
+    console.error('Ошибка при создании директории для SQLite:', err.message);
   }
-  
-  // Проверяем права на запись
-  try {
-    fs.accessSync(dir, fs.constants.W_OK);
-  } catch (err) {
-    console.error(`Нет прав на запись в директорию ${dir}. Проверьте права доступа.`);
-    process.exit(1);
-  }
-  
-  sequelize = new Sequelize({
-    dialect: 'sqlite',
-    storage: sqlitePath,
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    pool: { max: 1, min: 0 }
-  });
-} else {
-  sequelize = new Sequelize(
-    process.env.DB_NAME,
-    process.env.DB_USER,
-    process.env.DB_PASSWORD,
-    {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      dialect: 'postgres',
-      logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      pool: { max: 2, min: 0, acquire: 30000, idle: 10000 }
-    }
-  );
 }
+
+// Проверяем права на запись
+try {
+  fs.accessSync(dir, fs.constants.W_OK);
+} catch (_err) {
+  console.error(`Нет прав на запись в директорию ${dir}. Проверьте права доступа.`);
+  process.exit(1);
+}
+
+const sequelize = new Sequelize({
+  dialect: 'sqlite',
+  storage: sqlitePath,
+  logging: process.env.NODE_ENV === 'development' ? console.log : false,
+  pool: { max: 1, min: 0 },
+});
 
 // Функция для проверки подключения
 async function testConnection() {
@@ -66,27 +47,27 @@ async function syncDatabase() {
   // Для sqlite: попробуем удалить старые проблемные уникальные индексы
   // (например, уникальный индекс только на `dayOfWeek`), чтобы избежать
   // ошибок при выполнении ALTER TABLE через механизм создания backup-таблицы.
-  if (sequelize.getDialect && sequelize.getDialect() === 'sqlite') {
-    try {
-      const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT });
-      for (const idx of indexes) {
-        // В sqlite поле unique возвращается как 1/0
-        if (idx.unique) {
-          const idxName = idx.name;
-          const cols = await sequelize.query(`PRAGMA index_info('${idxName}')`, { type: Sequelize.QueryTypes.SELECT });
-          if (Array.isArray(cols) && cols.length === 1 && cols[0].name === 'dayOfWeek') {
-            console.log(`Удаляю проблемный индекс ${idxName} (уникальный на dayOfWeek)`);
-            try {
-              await sequelize.query(`DROP INDEX IF EXISTS ${idxName};`);
-            } catch (dropErr) {
-              console.warn('Не удалось удалить индекс', idxName, dropErr);
-            }
+  try {
+    const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT });
+    for (const idx of indexes) {
+      // В sqlite поле unique возвращается как 1/0
+      if (idx.unique) {
+        const idxName = idx.name;
+        const qi = sequelize.getQueryInterface();
+        const quotedIdx = qi.quoteIdentifier(idxName);
+        const cols = await sequelize.query(`PRAGMA index_info(${quotedIdx})`, { type: Sequelize.QueryTypes.SELECT });
+        if (Array.isArray(cols) && cols.length === 1 && cols[0].name === 'dayOfWeek') {
+          console.log(`Удаляю проблемный индекс ${idxName} (уникальный на dayOfWeek)`);
+          try {
+            await sequelize.query(`DROP INDEX IF EXISTS ${quotedIdx};`);
+          } catch (dropErr) {
+            console.warn('Не удалось удалить индекс', idxName, dropErr);
           }
         }
       }
-    } catch (e) {
-      console.warn('Не удалось получить список индексов schedules:', e.message || e);
     }
+  } catch (e) {
+    console.warn('Не удалось получить список индексов schedules:', e.message || e);
   }
   try {
     await sequelize.sync({ alter: true });

@@ -1,5 +1,5 @@
 const { Schedule } = require('../models');
-const { getDayOfWeek, getNextDayOfWeek, formatDate, getDayName } = require('./dateUtils');
+const { getDayOfWeek, getNextDayOfWeek } = require('./dateUtils');
 const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
 
 /**
@@ -62,19 +62,6 @@ async function getScheduleForDay(dayOfWeek) {
 }
 
 /**
- * Получить расписание на всю неделю
- */
-async function getWeeklySchedule() {
-  const weeklySchedule = {};
-  
-  for (let day = 0; day < 7; day++) {
-    weeklySchedule[day] = await getScheduleForDay(day);
-  }
-  
-  return weeklySchedule;
-}
-
-/**
  * Получить домашнее задание на конкретную дату.
  * Если режим personal — показываем ДЗ только текущего пользователя.
  * Если режим shared  — показываем ДЗ всех пользователей.
@@ -129,19 +116,6 @@ async function getHomeworkForWeek(userId, startDate = new Date()) {
 }
 
 /**
- * Форматировать расписание для отображения
- */
-function formatSchedule(schedules) {
-  if (schedules.length === 0) {
-    return 'Расписание пусто';
-  }
-
-  return schedules
-    .map(s => `${s.lessonNumber}. ${s.subjectName}`)
-    .join('\n');
-}
-
-/**
  * Форматировать домашнее задание для отображения
  */
 function formatHomework(homeworkData) {
@@ -180,9 +154,7 @@ function formatHomework(homeworkData) {
 module.exports = {
   findNextLesson,
   getScheduleForDay,
-  getWeeklySchedule,
   getHomeworkForDate,
   getHomeworkForWeek,
-  formatSchedule,
   formatHomework
 };

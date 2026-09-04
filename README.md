@@ -1,6 +1,6 @@
 # Telegram Бот-Дневник для Домашнего Задания
 
-Telegram-бот для ведения домашнего задания по школьному расписанию. Node.js, PostgreSQL или SQLite, Docker Compose.
+Telegram-бот для ведения домашнего задания по школьному расписанию. Node.js, SQLite, Docker Compose.
 
 ## Быстрый старт
 
@@ -8,175 +8,99 @@ Telegram-бот для ведения домашнего задания по ш�
 2. Запуск: `docker compose up -d --build`
 3. Бот в Telegram: `/start`
 
----
-
-## Почему Postgres грузит CPU, когда бот простаивает
-
-Даже без запросов от приложения Postgres держит фоновые процессы, которые периодически просыпаются:
-
-| Процесс | Что делает | Почему даёт нагрузку |
-|--------|------------|----------------------|
-| **bgwriter** | Сбрасывает буферы на диск | По умолчанию проверяет каждые **200 ms** → до 5 раз в секунду. На 1 vCPU это даёт заметный «средний» CPU. |
-| **checkpointer** | Записывает checkpoint (снимок данных) | Обычно каждые 5 минут, но при нагрузке — чаще. |
-| **autovacuum launcher** | Решает, когда запускать vacuum/analyze | Просыпается по `autovacuum_naptime` (по умолчанию 1 мин). |
-| **autovacuum worker** | Чистит мёртвые строки, обновляет статистику | На маленьких таблицах срабатывает часто: достаточно 10–20% изменений (`autovacuum_analyze_scale_factor=0.1`). |
-| **stats collector** | Собирает статистику | Постоянная фоновая активность. |
-
-На VPS с 1 vCPU и 1 GB RAM каждое такое пробуждение даёт всплеск CPU; в `docker stats` это выглядит как почти постоянные десятки процентов, даже если бот не используется.
-
----
-
-## Что изменено в конфигурации Postgres
-
-Чтобы снизить нагрузку в простое:
-
-- **bgwriter**: `bgwriter_delay=1000ms` (реже, чем 200 ms), `bgwriter_lru_maxpages=5` — меньше записей за раз.
-- **checkpoint**: `checkpoint_timeout=30min` — реже, чем 5 мин.
-- **autovacuum**:  
-  - `autovacuum_naptime=15min` — реже проверки;  
-  - `autovacuum_vacuum_scale_factor=0.5`, `autovacuum_analyze_scale_factor=0.25` — реже срабатывает на маленьких таблицах;  
-  - `autovacuum_vacuum_cost_delay=50ms` — vacuum и analyze работают «мягче».
-- **Память и соединения**: `shared_buffers=16MB`, `work_mem=512kB`, `max_connections=10`.
-- **Пул в приложении**: в Sequelize `pool.max` для Postgres уменьшен до 2 — меньше лишних соединений.
-
-После правок пересоздайте контейнер Postgres, чтобы применить `command` и лимиты:
-
-```bash
-docker compose down
-docker compose up -d --build
-```
-
----
-
-## Вариант на SQLite (почти нет нагрузки в простое)
-
-SQLite не держит фоновых процессов (autovacuum, bgwriter, checkpointer и т.п.), в простое CPU и RAM почти не использует.
-
-Запуск **только бота** с SQLite (без Postgres):
-
-```bash
-docker compose -f docker-compose.sqlite.yml up -d --build
-```
-
-Данные — в томе `sqlite_data` (файл `/app/data/db.sqlite`).
-
-**Если контейнер постоянно перезапускается:**
-
-1. Проверьте логи: `docker compose -f docker-compose.sqlite.yml logs bot`
-2. Если ошибка про права доступа к `/app/data`:
-   ```bash
-   # Остановите контейнер
-   docker compose -f docker-compose.sqlite.yml down
-   
-   # Удалите том (данные потеряются!)
-   docker volume rm tgdomashkabot_sqlite_data
-   
-   # Запустите заново — том создастся с правильными правами
-   docker compose -f docker-compose.sqlite.yml up -d --build
-   ```
-3. Или исправьте права вручную (если нужно сохранить данные):
-   ```bash
-   docker compose -f docker-compose.sqlite.yml run --rm --user root bot chown -R nodejs:nodejs /app/data
-   ```
+Данные — в томе `sqlite_data` (файл `/app/data/db.sqlite` внутри контейнера).
 
 Обновление без потери данных:
 
 ```bash
-docker compose -f docker-compose.sqlite.yml pull
-docker compose -f docker-compose.sqlite.yml up -d --build
-```
-
----
-
-## Переключение между Postgres и SQLite без потери данных
-
-Данные в Postgres (том `postgres_data`) и в SQLite (том `sqlite_data`) хранятся по-разному. При смене варианта (другой `docker-compose` или другие переменные) **автоматического переноса нет** — нужно один раз экспорт и импорт.
-
-### 1. Экспорт из текущей БД (в файл на хосте)
-
-**Если бот на Postgres:**
-```bash
-docker compose exec bot node scripts/export-db.js > export.json
-```
-
-**Если бот на SQLite:**
-```bash
-docker compose -f docker-compose.sqlite.yml exec bot node scripts/export-db.js > export.json
-```
-
-### 2. Остановка и запуск на другой БД
-
-Пример: перейти с Postgres на SQLite.
-
-```bash
-# Остановить текущий вариант (без -v, тома не трогаем)
-docker compose down
-
-# Запустить на SQLite
-docker compose -f docker-compose.sqlite.yml up -d --build
-```
-
-### 3. Импорт в новую БД
-
-**Если теперь бот на Postgres:**
-```bash
-docker compose exec -T bot node scripts/import-db.js --yes < export.json
-```
-
-**Если теперь бот на SQLite:**
-```bash
-docker compose -f docker-compose.sqlite.yml exec -T bot node scripts/import-db.js --yes < export.json
-```
-
-Импорт **полностью заменяет** расписание и домашние задания в целевой БД. Без `--yes` скрипт только печатает, что будет импортировано, и не меняет данные.
-
-Итого: можно периодически переключаться с одной базы на другую, каждый раз делая экспорт → смену compose → импорт, без потери данных.
-
----
-
-## Обновление без потери данных (Postgres)
-
-Том `postgres_data` не удаляется при `docker compose down` (без `-v`). Чтобы обновить образы и код:
-
-```bash
-docker compose pull
 docker compose up -d --build
 ```
 
-Не используйте `docker compose down -v` — `-v` удаляет тома и базу.
+> ⚠️ Никогда не используйте `docker compose down -v` — флаг `-v` удаляет том `sqlite_data` и базу.
 
 ---
 
-## Остановка
+## Миграция с Postgres (если сервер ещё на Postgres)
 
-**Postgres-вариант:**
+Проект переведён на SQLite-only. Если сервер ещё работает на старом `docker-compose.yml` с Postgres, перенесите данные через `backup.json` (3 таблицы, скрипты `scripts/export-db.js` / `scripts/import-db.js` уже в репозитории).
+
+### Шаг 1 — Экспорт на старом сервере (до обновления кода)
+
+На сервере, где ещё Postgres:
+
 ```bash
-docker compose down
+docker compose exec bot node scripts/export-db.js > backup.json
+# проверьте: cat backup.json | head -20  — должен быть JSON с schedules/homeworks
 ```
 
-**SQLite-вариант:**
+### Шаг 2 — Обновление кода
+
 ```bash
-docker compose -f docker-compose.sqlite.yml down
+git pull
+```
+
+После `git pull` `docker-compose.yml` уже SQLite-only, `docker-compose.sqlite.yml` удалён (legacy).
+
+### Шаг 3 — Запуск на SQLite
+
+```bash
+docker compose up -d --build
+```
+
+Том `sqlite_data` создастся автоматически. Старый том `postgres_data` останется на диске, но больше не используется — удаляйте вручную только когда убедитесь, что миграция прошла:
+
+```bash
+# только после успешной проверки бота!
+docker volume ls | grep postgres
+# docker volume rm <имя_postgres_toma>
+```
+
+### Шаг 4 — Импорт
+
+```bash
+docker compose exec -T bot node scripts/import-db.js --yes < backup.json
+```
+
+Без `--yes` скрипт только печатает, что будет импортировано, и не меняет данные. Импорт полностью заменяет расписание и домашние задания в целевой БД.
+
+---
+
+## Если контейнер постоянно перезапускается
+
+1. Проверьте логи: `docker compose logs bot`
+2. Если ошибка про права доступа к `/app/data`:
+   ```bash
+   docker compose down
+   # Удалите том (данные потеряются!) — только если это новая установка
+   docker volume rm tgdomashkabot_sqlite_data
+   docker compose up -d --build
+   ```
+3. Или исправьте права вручную (если нужно сохранить данные):
+   ```bash
+   docker compose run --rm --user root bot chown -R nodejs:nodejs /app/data
+   ```
+
+Остановка:
+
+```bash
+docker compose down
 ```
 
 ---
 
 ## Переменные окружения (.env)
 
-**Общие:**
-- `BOT_TOKEN` — токен от @BotFather  
-- `ADMIN_ID` — Telegram ID (например, @userinfobot)  
-- `NODE_ENV` — по желанию
-
-**Postgres (если не USE_SQLITE):**
-- `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT` — при необходимости переопределите значения по умолчанию.
-
-**SQLite (вариант `docker-compose.sqlite.yml`):**
-- `USE_SQLITE=true` — уже задано в compose.  
-- `SQLITE_PATH` — путь к файлу (в compose: `/app/data/db.sqlite`).
+- `BOT_TOKEN` — токен от @BotFather
+- `ADMIN_ID` — Telegram ID (например, @userinfobot)
+- `NODE_ENV` — по желанию (`production` по умолчанию)
+- `SQLITE_PATH` — путь к файлу внутри контейнера (по умолчанию `/app/data/db.sqlite`, уже задан в `docker-compose.yml`; переопределяйте только если меняете volume)
 
 ---
 
-## Если контейнер Postgres падает с OOM
+## Legacy: почему Postgres удалён
 
-Увеличьте лимит в `docker-compose.yml`, например: `mem_limit: 384m`.
+Ранее проект использовал Postgres с тонкой настройкой (`shared_buffers=16MB`, `bgwriter_delay=1000ms`, `autovacuum_naptime=15min` и т.д.), чтобы снизить фоновую нагрузку на VPS 1 vCPU/1 GB RAM. Postgres даже в простое держит фоновые процессы (bgwriter, checkpointer, autovacuum, stats collector), которые периодически просыпаются и дают заметный CPU. SQLite не держит фоновых процессов и в простое почти не тратит CPU/RAM — поэтому оставлен только SQLite. Подробности старой настройки — в истории git.
+
+## Legacy файлы
+
+- `docker-compose.sqlite.yml` — удалён. Теперь `docker-compose.yml` и есть SQLite-вариант. Если на сервере есть скрипты с `-f docker-compose.sqlite.yml`, замените на `docker compose up -d --build`.

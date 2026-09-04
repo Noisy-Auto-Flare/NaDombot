@@ -1,7 +1,7 @@
-const { Markup } = require('telegraf');
 const { getHomeworkForDate, getHomeworkForWeek, formatHomework } = require('../utils/scheduleUtils');
-const { getNextDay, getNextWorkDay, formatDate, getDayName, getDayOfWeek } = require('../utils/dateUtils');
-const { toggleHomeworkVisibility, getHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
+const { getNextWorkDay } = require('../utils/dateUtils');
+const { toggleHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
+const { isAdmin } = require('../middleware/isAdmin');
 
 /**
  * Обработчики команд бота
@@ -11,7 +11,7 @@ const { toggleHomeworkVisibility, getHomeworkVisibility, getHomeworkVisibilityLa
  * Команда /start - главное меню
  */
 async function handleStart(ctx) {
-  const isAdmin = ctx.from.id.toString() === process.env.ADMIN_ID;
+  const admin = isAdmin(ctx);
 
   const keyboard = [
     [{ text: '➕ Добавить домашнее задание', callback_data: 'add_homework' }],
@@ -19,7 +19,7 @@ async function handleStart(ctx) {
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }]
   ];
 
-  if (isAdmin) {
+  if (admin) {
     keyboard.push([
       { text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }
     ]);
@@ -44,7 +44,7 @@ async function handleStart(ctx) {
  * Команда /help - справка
  */
 async function handleHelp(ctx) {
-  const isAdmin = ctx.from.id.toString() === process.env.ADMIN_ID;
+  const admin = isAdmin(ctx);
 
   let helpText = 
     '📚 Справка по использованию бота:\n\n' +
@@ -53,7 +53,7 @@ async function handleHelp(ctx) {
     '• Домашнее задание на завтра - просмотр ДЗ на следующий день\n' +
     '• Домашнее задание на неделю - просмотр ДЗ на всю неделю\n\n';
 
-  if (isAdmin) {
+  if (admin) {
     helpText += 
       'Функции администратора:\n' +
       '• Управление расписанием - добавление и редактирование расписания\n\n';
@@ -197,9 +197,7 @@ async function handleHomeworkWeek(ctx) {
  * Обработчик кнопки "Управление расписанием" (только для админа)
  */
 async function handleManageSchedule(ctx) {
-  const isAdmin = ctx.from.id.toString() === process.env.ADMIN_ID;
-  
-  if (!isAdmin) {
+  if (!isAdmin(ctx)) {
     await ctx.answerCbQuery('❌ У вас нет прав администратора');
     return;
   }
@@ -213,9 +211,7 @@ async function handleManageSchedule(ctx) {
  * personal — у каждого своё; shared — общее для всех.
  */
 async function handleToggleHomeworkVisibility(ctx) {
-  const isAdmin = ctx.from.id.toString() === process.env.ADMIN_ID;
-
-  if (!isAdmin) {
+  if (!isAdmin(ctx)) {
     await ctx.answerCbQuery('❌ У вас нет прав администратора');
     return;
   }

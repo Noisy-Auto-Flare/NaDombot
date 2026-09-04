@@ -28,21 +28,12 @@ function getDayOfWeek(date) {
 }
 
 /**
- * Получить дату следующего дня
- */
-function getNextDay(date) {
-  const nextDay = new Date(date);
-  nextDay.setDate(nextDay.getDate() + 1);
-  return nextDay;
-}
-
-/**
  * Получить следующий рабочий день (понедельник-пятница)
  * Если сегодня пятница, вернет понедельник следующей недели
  */
 function getNextWorkDay(date) {
   const currentDayOfWeek = getDayOfWeek(date);
-  let nextDate = new Date(date);
+  const nextDate = new Date(date);
   
   // Если сегодня пятница (4) или выходной (5-6), переходим на понедельник
   if (currentDayOfWeek >= 4) {
@@ -100,31 +91,11 @@ function getWeekDates(startDate) {
   return dates;
 }
 
-/**
- * Проверить, является ли дата сегодняшней
- */
-function isToday(date) {
-  const today = new Date();
-  return date.toDateString() === today.toDateString();
-}
-
-/**
- * Проверить, является ли дата завтрашней
- */
-function isTomorrow(date) {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return date.toDateString() === tomorrow.toDateString();
-}
-
 module.exports = {
   getDayName,
   getDayOfWeek,
-  getNextDay,
   getNextWorkDay,
   getNextDayOfWeek,
   formatDate,
-  getWeekDates,
-  isToday,
-  isTomorrow
+  getWeekDates
 };

@@ -1,4 +1,4 @@
-const { Telegraf, Scenes, session } = require('telegraf');
+const { Telegraf, session } = require('telegraf');
 require('dotenv').config();
 
 // Проверка наличия токена

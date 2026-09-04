@@ -28,22 +28,10 @@ async function readStdin() {
 }
 
 async function resetSequence(table, idColumn) {
-  const dialect = (typeof sequelize.getDialect === 'function' && sequelize.getDialect()) || '';
-
-  if (dialect === 'postgres') {
-    await sequelize.query(
-      `SELECT setval(
-        pg_get_serial_sequence('${table}', '${idColumn}'),
-        COALESCE((SELECT MAX("${idColumn}") FROM "${table}"), 1)
-      )`,
-      { raw: true }
-    );
-  } else if (dialect === 'sqlite') {
-    await sequelize.query(
-      `UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(${idColumn}), 1) FROM ${table}) WHERE name='${table}'`,
-      { raw: true }
-    );
-  }
+  await sequelize.query(
+    `UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(${idColumn}), 1) FROM ${table}) WHERE name='${table}'`,
+    { raw: true }
+  );
 }
 
 async function run() {
@@ -119,7 +107,9 @@ async function run() {
   try {
     await resetSequence('schedules', 'id');
     await resetSequence('homeworks', 'id');
-  } catch (_) {}
+  } catch (e) {
+    console.warn('Не удалось сбросить sqlite_sequence:', e.message || e);
+  }
 
   console.error('Импорт завершён.');
   await sequelize.close();
