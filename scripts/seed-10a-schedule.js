@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * Seed расписания 10а (технический профиль) + звонков из фото.
- * Идемпотентно: upsert по (dayOfWeek, lessonNumber), не удаляет лишние уроки, но перезапишет существующие.
+ * Seed расписания 10а (технический профиль, только Т) + звонков из фото.
+ * Идемпотентно: upsert по (dayOfWeek, lessonNumber), перезапишет существующие.
  * Запуск: docker compose exec bot node scripts/seed-10a-schedule.js --yes
- * Без --yes — dry-run (печать что будет).
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -37,16 +36,28 @@ function expandSubject(raw) {
   return raw.split('/').map(part => {
     const t = part.trim();
     const low = t.toLowerCase();
-    if (map[t] ) return map[t];
+    if (map[t]) return map[t];
     if (map[low]) return map[low];
-    for (const k of Object.keys(map)) {
-      if (k.toLowerCase() === low) return map[k];
-    }
+    for (const k of Object.keys(map)) if (k.toLowerCase() === low) return map[k];
     return t;
   }).join('/');
 }
 
-const SCHEDULE_10A = [
+function pickTechProfile(subjectRaw, roomRaw) {
+  if (!subjectRaw.includes('/')) return { subject: expandSubject(subjectRaw), room: roomRaw };
+  const subParts = subjectRaw.split('/').map(s => s.trim());
+  const roomParts = roomRaw.split('/').map(r => r.trim());
+  // Т группы — часть оканчивается на Т (инфТ, общТ, физ спТ)
+  let idx = subParts.findIndex(p => p.slice(-1).toUpperCase() === 'Т');
+  if (idx === -1) idx = subParts.findIndex(p => p.toUpperCase().includes('Т'));
+  if (idx === -1) idx = 0; // fallback
+  if (idx >= roomParts.length) idx = 0;
+  const pickedSub = subParts[idx] || subParts[0];
+  const pickedRoom = roomParts[idx] || roomParts[0] || roomRaw;
+  return { subject: expandSubject(pickedSub), room: pickedRoom };
+}
+
+const RAW_SCHEDULE = [
   { dayOfWeek: 0, lessonNumber: 1, subjectName: 'Разговор о важном', room: '2035' },
   { dayOfWeek: 0, lessonNumber: 2, subjectName: 'инфТ/общС', room: '1059/3021' },
   { dayOfWeek: 0, lessonNumber: 3, subjectName: 'общТ/инфС', room: '3028/1059' },
@@ -83,7 +94,12 @@ const SCHEDULE_10A = [
   { dayOfWeek: 4, lessonNumber: 6, subjectName: 'физ культ', room: 'БСЗ/МСЗ' },
   { dayOfWeek: 4, lessonNumber: 7, subjectName: 'инфТ/общС', room: '1059/3021' },
   { dayOfWeek: 4, lessonNumber: 8, subjectName: 'проект', room: '3028' },
-].map(r => ({ ...r, subjectName: expandSubject(r.subjectName) }));
+];
+
+const SCHEDULE_10A = RAW_SCHEDULE.map(r => {
+  const picked = pickTechProfile(r.subjectName, r.room);
+  return { ...r, subjectName: picked.subject, room: picked.room };
+});
 
 async function run() {
   try { await sequelize.authenticate(); } catch (e) {
@@ -92,7 +108,7 @@ async function run() {
   await sequelize.sync();
   await seedLessonTimes();
 
-  console.log(`${DRY ? '[DRY-RUN] ' : ''}Будет upsert ${SCHEDULE_10A.length} уроков 10а (дни 0-4):`);
+  console.log(`${DRY ? '[DRY-RUN] ' : ''}Будет upsert ${SCHEDULE_10A.length} уроков 10а ТЕХ профиль (дни 0-4):`);
   for (const s of SCHEDULE_10A) {
     console.log(`  ${['Пн','Вт','Ср','Чт','Пт'][s.dayOfWeek]} ${s.lessonNumber}. ${s.subjectName} — каб. ${s.room}`);
   }
@@ -100,7 +116,7 @@ async function run() {
   const bells = await LessonTime.findAll({ order: [['lessonNumber','ASC']] });
   console.log(`\nЗвонки (${bells.length}): ${bells.map(b=>`${b.lessonNumber}:${b.startTime}-${b.endTime}`).join(', ')}`);
   if (DRY) {
-    console.log('\nЗапусти с --yes чтобы записать в БД');
+    console.log('\nЗапусти с --yes чтобы записать в БД (перезапишет существующие уроки)');
     await sequelize.close(); process.exit(0);
   }
   for (const s of SCHEDULE_10A) {
@@ -112,7 +128,7 @@ async function run() {
       await row.update({ subjectName: s.subjectName, room: s.room });
     }
   }
-  console.log('\n✅ Расписание 10а и звонки обновлены. Проверь: /start -> расписание, 🏫 В каком кабинете урок');
+  console.log('\n✅ Расписание 10а ТЕХ профиль и звонки обновлены. Проверь: /start -> расписание, 🏫 В каком кабинете урок');
   await sequelize.close(); process.exit(0);
 }
 run().catch(e=>{ console.error(e); process.exit(1); });
