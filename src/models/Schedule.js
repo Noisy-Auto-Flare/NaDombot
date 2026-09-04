@@ -14,7 +14,7 @@ const Schedule = sequelize.define('Schedule', {
   lessonNumber: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    comment: 'Номер урока (1-7)'
+    comment: 'Номер урока (1-10)'
   },
   subjectName: {
     type: DataTypes.STRING(100),

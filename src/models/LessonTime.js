@@ -11,7 +11,7 @@ const LessonTime = sequelize.define('LessonTime', {
     primaryKey: true,
     validate: {
       min: 1,
-      max: 7
+      max: 10
     }
   },
   startTime: {

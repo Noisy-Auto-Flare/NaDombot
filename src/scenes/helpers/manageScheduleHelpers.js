@@ -4,9 +4,7 @@ const lessonTimeService = require('../../services/LessonTimeService');
 const { parseLessonInput, parseRoomInput } = require('../../utils/scheduleValidator');
 const { validateTimeRange } = require('../../utils/lessonTimeValidator');
 const { cancelKeyboard, backKeyboard } = require('../../utils/keyboards');
-
 const ROOM_PROMPT = 'В каком кабинете проходит урок? (отправьте номер, или \'-\' чтобы пропустить)';
-
 function parseBellInput(text) {
   const t = String(text).trim();
   const normalized = t.replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
@@ -21,7 +19,6 @@ function parseBellInput(text) {
   if (!start || !end) throw new Error('❌ Неверный формат. Используйте HH:MM-HH:MM, например 08:30-09:15');
   return { start, end };
 }
-
 async function handleEditSelect(ctx) {
   const id = parseInt(ctx.message.text.trim(), 10);
   if (isNaN(id)) {
@@ -47,7 +44,6 @@ async function handleEditSelect(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleAdd(ctx) {
   let parsed;
   try {
@@ -76,7 +72,6 @@ async function handleAdd(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleAddRoom(ctx) {
   let room;
   try {
@@ -107,7 +102,6 @@ async function handleAddRoom(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleEdit(ctx) {
   let parsed;
   try {
@@ -137,7 +131,6 @@ async function handleEdit(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleEditRoom(ctx) {
   let room;
   try {
@@ -177,7 +170,6 @@ async function handleEditRoom(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleDelete(ctx) {
   const id = parseInt(ctx.message.text.trim(), 10);
   if (isNaN(id)) {
@@ -200,11 +192,10 @@ async function handleDelete(ctx) {
     return ctx.wizard.back();
   }
 }
-
 async function handleBellSelect(ctx) {
   const n = parseInt(ctx.message.text.trim(), 10);
-  if (isNaN(n) || n < 1 || n > 7) {
-    await ctx.reply('❌ Неверный номер урока. Введите число от 1 до 7.', cancelKeyboard);
+  if (isNaN(n) || n < 1 || n > 10) {
+    await ctx.reply('❌ Неверный номер урока. Введите число от 1 до 10.', cancelKeyboard);
     return;
   }
   ctx.wizard.state.bellLessonNumber = n;
@@ -213,7 +204,6 @@ async function handleBellSelect(ctx) {
   const hint = existing ? `Текущее время: ${existing.startTime}–${existing.endTime}\n` : '';
   await ctx.reply(`${hint}Введите время для урока ${n} в формате HH:MM-HH:MM\nПример: 08:30-09:15`, cancelKeyboard);
 }
-
 async function handleBellTime(ctx) {
   let parsed;
   try {
@@ -245,7 +235,6 @@ async function handleBellTime(ctx) {
     return ctx.wizard.back();
   }
 }
-
 module.exports = {
   handleEditSelect,
   handleAdd,

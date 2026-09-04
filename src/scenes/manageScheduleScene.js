@@ -83,7 +83,7 @@ const manageScheduleScene = new Scenes.WizardScene(
         await ctx.reply('❌ У вас нет прав администратора');
         return;
       }
-      await ctx.reply('🔔 Настройка звонков\n\nВведите номер урока (1-7) для редактирования:', cancelKeyboard);
+      await ctx.reply('🔔 Настройка звонков\n\nВведите номер урока (1-10) для редактирования:', cancelKeyboard);
       ctx.wizard.state.action = 'edit_bells_select';
       return ctx.wizard.next();
     }

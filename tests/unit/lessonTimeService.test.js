@@ -25,10 +25,10 @@ describe('LessonTimeService + validator + formatter (TDD)', () => {
     await sequelize.close();
   });
 
-  test('seeded LessonTime table has 7 rows ordered 1-7', async () => {
+  test('seeded LessonTime table has 10 rows ordered 1-10', async () => {
     const rows = await service.findAllOrdered();
-    expect(rows).toHaveLength(7);
-    expect(rows.map((r) => r.lessonNumber)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(rows).toHaveLength(10);
+    expect(rows.map((r) => r.lessonNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
   test('valid upsert creates/updates and findByLessonNumber returns it', async () => {
@@ -57,12 +57,14 @@ describe('LessonTimeService + validator + formatter (TDD)', () => {
     expect(() => validator.validateHHMM('8:30')).toThrow(validator.ValidationError);
   });
 
-  test('invalid lessonNumber 0 and 8 throws ValidationError', async () => {
+  test('invalid lessonNumber 0 and 11 throws ValidationError', async () => {
     await expect(service.upsert(0, '08:30', '09:15')).rejects.toThrow(validator.ValidationError);
-    await expect(service.upsert(8, '08:30', '09:15')).rejects.toThrow(validator.ValidationError);
+    await expect(service.upsert(11, '08:30', '09:15')).rejects.toThrow(validator.ValidationError);
     expect(() => validator.validateLessonNumber(0)).toThrow(validator.ValidationError);
-    expect(() => validator.validateLessonNumber(8)).toThrow(validator.ValidationError);
+    expect(() => validator.validateLessonNumber(11)).toThrow(validator.ValidationError);
     expect(() => validator.validateLessonNumber(3.5)).toThrow(validator.ValidationError);
+    expect(() => validator.validateLessonNumber(8)).not.toThrow();
+    expect(() => validator.validateLessonNumber(10)).not.toThrow();
   });
 
   test('start >= end throws ValidationError', async () => {
@@ -73,11 +75,11 @@ describe('LessonTimeService + validator + formatter (TDD)', () => {
   });
 
   test('findAllOrdered returns ordered by lessonNumber asc even after out-of-order upserts', async () => {
-    await service.upsert(7, '14:30', '15:15');
-    await service.upsert(3, '10:30', '11:15');
+    await service.upsert(7, '14:25', '15:10');
+    await service.upsert(3, '10:25', '11:10');
     const rows = await service.findAllOrdered();
     const numbers = rows.map((r) => r.lessonNumber);
-    expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     for (let i = 1; i < numbers.length; i++) {
       expect(numbers[i]).toBeGreaterThan(numbers[i - 1]);
     }
@@ -86,11 +88,13 @@ describe('LessonTimeService + validator + formatter (TDD)', () => {
   test('getBellScheduleMap returns Map<number,{start,end}>', async () => {
     const map = await service.getBellScheduleMap();
     expect(map instanceof Map).toBe(true);
-    expect(map.size).toBe(7);
+    expect(map.size).toBe(10);
     expect(map.get(1)).toEqual({ start: '08:30', end: '09:15' });
-    expect(map.get(7)).toEqual({ start: '14:30', end: '15:15' });
-    // verify all keys 1-7
-    for (let i = 1; i <= 7; i++) {
+    expect(map.get(7)).toEqual({ start: '14:25', end: '15:10' });
+    expect(map.get(8)).toEqual({ start: '15:25', end: '16:10' });
+    expect(map.get(10)).toEqual({ start: '17:25', end: '18:10' });
+    // verify all keys 1-10
+    for (let i = 1; i <= 10; i++) {
       const v = map.get(i);
       expect(v).toHaveProperty('start');
       expect(v).toHaveProperty('end');
@@ -126,6 +130,7 @@ describe('LessonTimeService + validator + formatter (TDD)', () => {
     expect(() => validator.validateHHMM('23:59')).not.toThrow();
     expect(() => validator.validateLessonNumber(1)).not.toThrow();
     expect(() => validator.validateLessonNumber(7)).not.toThrow();
+    expect(() => validator.validateLessonNumber(10)).not.toThrow();
     expect(() => validator.validateTimeRange('08:30', '09:15')).not.toThrow();
   });
 });

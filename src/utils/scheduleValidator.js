@@ -9,8 +9,8 @@ function validateDay(dayOfWeek) {
 }
 
 function validateLesson(lessonNumber) {
-  if (Number.isNaN(lessonNumber) || !Number.isInteger(lessonNumber) || lessonNumber < 1 || lessonNumber > 7) {
-    throw new Error('❌ Неверный номер урока. Используйте числа от 1 до 7.');
+  if (Number.isNaN(lessonNumber) || !Number.isInteger(lessonNumber) || lessonNumber < 1 || lessonNumber > 10) {
+    throw new Error('❌ Неверный номер урока. Используйте числа от 1 до 10.');
   }
 }
 

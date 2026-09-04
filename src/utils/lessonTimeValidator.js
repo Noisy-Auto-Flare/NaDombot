@@ -21,13 +21,13 @@ function validateHHMM(str) {
 }
 
 /**
- * Validate lesson number 1-7
+ * Validate lesson number 1-10
  * @param {number} n
  * @throws {ValidationError}
  */
 function validateLessonNumber(n) {
-  if (!Number.isInteger(n) || n < 1 || n > 7) {
-    throw new ValidationError(`Invalid lessonNumber: ${n} (expected 1-7)`);
+  if (!Number.isInteger(n) || n < 1 || n > 10) {
+    throw new ValidationError(`Invalid lessonNumber: ${n} (expected 1-10)`);
   }
 }
 

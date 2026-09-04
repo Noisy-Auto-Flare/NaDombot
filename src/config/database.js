@@ -44,32 +44,56 @@ async function testConnection() {
 
 // Функция для синхронизации моделей с БД
 async function syncDatabase() {
-  // Для sqlite: попробуем удалить старые проблемные уникальные индексы
-  // (например, уникальный индекс только на `dayOfWeek`), чтобы избежать
-  // ошибок при выполнении ALTER TABLE через механизм создания backup-таблицы.
+  // Для sqlite: чиним битую схему schedules (старая версия создавала UNIQUE на lessonNumber и dayOfWeek отдельно)
   try {
-    const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT });
-    for (const idx of indexes) {
-      // В sqlite поле unique возвращается как 1/0
-      if (idx.unique) {
-        const idxName = idx.name;
-        const qi = sequelize.getQueryInterface();
-        const quotedIdx = qi.quoteIdentifier(idxName);
-        const cols = await sequelize.query(`PRAGMA index_info(${quotedIdx})`, { type: Sequelize.QueryTypes.SELECT });
-        if (Array.isArray(cols) && cols.length === 1 && cols[0].name === 'dayOfWeek') {
-          console.log(`Удаляю проблемный индекс ${idxName} (уникальный на dayOfWeek)`);
-          try {
-            await sequelize.query(`DROP INDEX IF EXISTS ${quotedIdx};`);
-          } catch (dropErr) {
-            console.warn('Не удалось удалить индекс', idxName, dropErr);
+    const tbl = await sequelize.query("SELECT sql FROM sqlite_master WHERE type='table' AND name='schedules'", { type: Sequelize.QueryTypes.SELECT });
+    const sql = tbl[0]?.sql || '';
+    const hasBrokenCols = sql.includes('`lessonNumber`') && sql.includes('`dayOfWeek`') && /lessonNumber[^,]*UNIQUE/.test(sql) && /dayOfWeek[^,]*UNIQUE/.test(sql);
+    const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT }).catch(()=>[]);
+    const hasAutoIndex = Array.isArray(indexes) && indexes.some(i => i.name && i.name.startsWith('sqlite_autoindex_schedules'));
+    if (hasBrokenCols || hasAutoIndex) {
+      console.log('Обнаружена битая схема schedules (индивидуальные UNIQUE), пересоздаю таблицу...');
+      // бэкап для отката (если данные есть)
+      let backup = [];
+      try { backup = await sequelize.query("SELECT * FROM schedules", { type: Sequelize.QueryTypes.SELECT }); } catch {}
+      await sequelize.query("DROP TABLE IF EXISTS schedules");
+      const { Schedule } = require('../models');
+      await Schedule.sync();
+      // попытка восстановить бэкап если он валиден под новую схему (композитный unique)
+      if (backup.length) {
+        const seen = new Set();
+        let restored = 0;
+        for (const r of backup) {
+          const key = `${r.dayOfWeek}-${r.lessonNumber}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          try { await Schedule.create({ dayOfWeek: r.dayOfWeek, lessonNumber: r.lessonNumber, subjectName: r.subjectName, room: r.room }); restored++; } catch {}
+        }
+        if (restored) console.log(`✅ Восстановлено ${restored} строк schedules из бэкапа`);
+      }
+    } else {
+      // обычный фикс для одиночного индекса dayOfWeek (legacy)
+      for (const idx of indexes) {
+        if (idx.unique) {
+          const idxName = idx.name;
+          const qi = sequelize.getQueryInterface();
+          const quotedIdx = qi.quoteIdentifier(idxName);
+          const cols = await sequelize.query(`PRAGMA index_info(${quotedIdx})`, { type: Sequelize.QueryTypes.SELECT });
+          if (Array.isArray(cols) && cols.length === 1 && (cols[0].name === 'dayOfWeek' || cols[0].name === 'lessonNumber')) {
+            if (idx.origin === 'c') { // созданый вручную индекс — можно дропнуть
+              console.log(`Удаляю проблемный индекс ${idxName} (уникальный на ${cols[0].name})`);
+              try { await sequelize.query(`DROP INDEX IF EXISTS ${quotedIdx};`); } catch (dropErr) { console.warn('Не удалось удалить индекс', idxName, dropErr); }
+            }
           }
         }
       }
     }
   } catch (e) {
-    console.warn('Не удалось получить список индексов schedules:', e.message || e);
+    console.warn('Проверка схемы schedules пропустила:', e.message || e);
   }
   try {
+    // гарантируем что все модели зарегистрированы до sync
+    try { require('../models'); } catch {}
     await sequelize.sync({ alter: true });
     console.log('✅ Модели синхронизированы с базой данных.');
     try {

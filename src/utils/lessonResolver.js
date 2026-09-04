@@ -46,10 +46,20 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
   if (bells.length === 0) {
     return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null };
   }
+  // schedule-aware first/last: next/prev scheduled lesson, not just first/last bell
+  const scheduledBells = bells.filter((b) => findRow(rows, b.lessonNumber, todayDay));
+  const firstScheduled = scheduledBells[0] || bells[0];
+  const lastScheduled = scheduledBells[scheduledBells.length - 1] || bells[bells.length - 1];
   const first = bells[0];
   const last = bells[bells.length - 1];
+  if (scheduledBells.length > 0 && nowMinutes < firstScheduled.startMin) {
+    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: firstScheduled.start, end: firstScheduled.end }, prevBell: null, nextLesson: toInfo(findRow(rows, firstScheduled.lessonNumber, todayDay)), prevLesson: null };
+  }
   if (nowMinutes < first.startMin) {
     return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: first.start, end: first.end }, prevBell: null, nextLesson: toInfo(findRow(rows, first.lessonNumber, todayDay)), prevLesson: null };
+  }
+  if (scheduledBells.length > 0 && nowMinutes >= lastScheduled.endMin) {
+    return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: lastScheduled.start, end: lastScheduled.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, lastScheduled.lessonNumber, todayDay)) };
   }
   if (nowMinutes >= last.endMin) {
     return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: last.start, end: last.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, last.lessonNumber, todayDay)) };
@@ -69,7 +79,24 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
     const cur = bells[i];
     const nxt = bells[i + 1];
     if (nowMinutes >= cur.endMin && nowMinutes < nxt.startMin) {
-      return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: nxt.start, end: nxt.end }, prevBell: { start: cur.start, end: cur.end }, nextLesson: toInfo(findRow(rows, nxt.lessonNumber, todayDay)), prevLesson: toInfo(findRow(rows, cur.lessonNumber, todayDay)) };
+      // schedule-aware next/prev: find next scheduled bell after now
+      let nextScheduled = null; let nextScheduledBell = null;
+      for (let j = i + 1; j < bells.length; j++) {
+        const cand = findRow(rows, bells[j].lessonNumber, todayDay);
+        if (cand) { nextScheduled = cand; nextScheduledBell = bells[j]; break; }
+      }
+      let prevScheduled = null; let prevScheduledBell = null;
+      for (let j = i; j >= 0; j--) {
+        const cand = findRow(rows, bells[j].lessonNumber, todayDay);
+        if (cand) { prevScheduled = cand; prevScheduledBell = bells[j]; break; }
+      }
+      // if no next scheduled today → lessons ended, treat as after
+      if (!nextScheduled) {
+        const lastSched = prevScheduled || findRow(rows, lastScheduled?.lessonNumber ?? cur.lessonNumber, todayDay);
+        const lastBell = prevScheduledBell || cur;
+        return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: lastBell ? { start: lastBell.start, end: lastBell.end } : null, nextLesson: null, prevLesson: toInfo(lastSched) };
+      }
+      return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: nextScheduledBell.start, end: nextScheduledBell.end }, prevBell: prevScheduledBell ? { start: prevScheduledBell.start, end: prevScheduledBell.end } : { start: cur.start, end: cur.end }, nextLesson: toInfo(nextScheduled), prevLesson: toInfo(prevScheduled) };
     }
   }
   return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null };
