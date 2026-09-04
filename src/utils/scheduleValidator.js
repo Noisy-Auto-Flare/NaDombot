@@ -20,6 +20,23 @@ function validateSubject(subjectName) {
   }
 }
 
+function validateRoom(room) {
+  if (room == null) return null;
+  const r = String(room).trim();
+  if (!r || r === '-') return null;
+  if (r.length > 20) {
+    throw new Error('❌ Номер кабинета слишком длинный (максимум 20 символов).');
+  }
+  return r;
+}
+
+function parseRoomInput(input) {
+  if (input == null) return null;
+  const raw = String(input).trim();
+  if (!raw || raw === '-') return null;
+  return validateRoom(raw);
+}
+
 /**
  * Парсит строку "<день> <урок> <предмет>" → объект
  * @param {string} input
@@ -51,5 +68,7 @@ module.exports = {
   validateDay,
   validateLesson,
   validateSubject,
+  validateRoom,
+  parseRoomInput,
   parseLessonInput,
 };

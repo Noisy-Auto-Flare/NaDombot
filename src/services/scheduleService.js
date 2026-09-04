@@ -1,9 +1,25 @@
 const { Op } = require('sequelize');
 const { Schedule, Homework } = require('../models');
+const { subjectsMatch } = require('../utils/subjectNormalizer');
 
 /**
  * Сервисный слой для расписания — изолирует Sequelize от сцен
  */
+
+function sanitizeSubjectForDisplay(subjectName) {
+  if (subjectName == null) return '';
+  const s = String(subjectName).normalize('NFKC').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const stripped = s.replace(/[.,;:!?]+$/g, '').trim();
+  return stripped;
+}
+
+function sanitizeRoom(room) {
+  if (room == null) return null;
+  const r = String(room).trim();
+  if (!r || r === '-') return null;
+  return r;
+}
 
 async function findById(id) {
   return Schedule.findByPk(id);
@@ -39,14 +55,42 @@ async function isSlotTaken(dayOfWeek, lessonNumber, excludeId = null) {
   return Schedule.findOne({ where });
 }
 
-async function create({ dayOfWeek, lessonNumber, subjectName }) {
+/**
+ * Case-insensitive find by subject (Cyrillic-safe).
+ * Uses subjectsMatch (normalize + firstToken fallback).
+ * @param {string} input
+ * @param {number|null} dayOfWeek - optional filter
+ * @returns {Promise<Array>}
+ */
+async function findBySubjectNormalized(input, dayOfWeek = null) {
+  const all = await Schedule.findAll({
+    order: [
+      ['dayOfWeek', 'ASC'],
+      ['lessonNumber', 'ASC'],
+    ],
+  });
+  let filtered = all.filter((s) => subjectsMatch(s.subjectName, input));
+  if (dayOfWeek != null) {
+    filtered = filtered.filter((s) => s.dayOfWeek === dayOfWeek);
+  }
+  return filtered;
+}
+
+async function create({ dayOfWeek, lessonNumber, subjectName, room }) {
   const existing = await isSlotTaken(dayOfWeek, lessonNumber);
   if (existing) {
     const err = new Error('SLOT_TAKEN');
     err.existing = existing;
     throw err;
   }
-  const created = await Schedule.create({ dayOfWeek, lessonNumber, subjectName });
+  const cleanSubject = sanitizeSubjectForDisplay(subjectName);
+  const cleanRoom = sanitizeRoom(room);
+  const created = await Schedule.create({
+    dayOfWeek,
+    lessonNumber,
+    subjectName: cleanSubject,
+    room: cleanRoom,
+  });
   return created;
 }
 
@@ -65,7 +109,14 @@ async function update(id, data) {
       throw err;
     }
   }
-  await schedule.update(data);
+  const toUpdate = { ...data };
+  if (data.subjectName !== undefined) {
+    toUpdate.subjectName = sanitizeSubjectForDisplay(data.subjectName);
+  }
+  if (data.room !== undefined) {
+    toUpdate.room = sanitizeRoom(data.room);
+  }
+  await schedule.update(toUpdate);
   return schedule;
 }
 
@@ -95,7 +146,11 @@ module.exports = {
   findAll,
   findAllGroupedByDay,
   isSlotTaken,
+  findBySubjectNormalized,
   create,
   update,
   deleteWithHomework,
+  // exposed for testing / reuse
+  _sanitizeSubjectForDisplay: sanitizeSubjectForDisplay,
+  _sanitizeRoom: sanitizeRoom,
 };

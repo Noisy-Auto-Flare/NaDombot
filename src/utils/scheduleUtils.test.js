@@ -43,17 +43,19 @@ describe('scheduleUtils.findNextLesson', () => {
     expect(res.date.getDate()).toBe(9); // next Monday
   });
 
-  test('passes correct ordering to findAll', async () => {
+  test('passes correct ordering to findAll (no where — filtered via subjectsMatch)', async () => {
     Schedule.findAll.mockResolvedValue([]);
     await findNextLesson('Химия', new Date());
     expect(Schedule.findAll).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { subjectName: 'Химия' },
         order: [
           ['dayOfWeek', 'ASC'],
           ['lessonNumber', 'ASC'],
         ],
       })
     );
+    // Ensure no where clause — filtering is done in JS via subjectsMatch
+    const callArg = Schedule.findAll.mock.calls[0][0];
+    expect(callArg).not.toHaveProperty('where');
   });
 });

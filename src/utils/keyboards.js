@@ -27,6 +27,7 @@ const manageScheduleKeyboard = {
       [{ text: '✏️ Редактировать урок', callback_data: 'schedule_edit' }],
       [{ text: '📋 Просмотреть расписание', callback_data: 'schedule_view' }],
       [{ text: '🗑 Удалить урок', callback_data: 'schedule_delete' }],
+      [{ text: '🔔 Настроить звонки', callback_data: 'edit_bells' }],
       [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }],
     ],
   },

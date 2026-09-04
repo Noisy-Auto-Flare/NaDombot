@@ -1,41 +1,50 @@
 const { Schedule } = require('../models');
 const { getDayOfWeek, getNextDayOfWeek } = require('./dateUtils');
+const { getMoscowDayOfWeek } = require('./moscowTime');
 const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
+const { subjectsMatch } = require('./subjectNormalizer');
 
 /**
  * Утилиты для работы с расписанием
  */
 
 /**
- * Получить ближайший будущий урок по указанному предмету
+ * Получить ближайший будущий урок по указанному предмету (case-insensitive, Cyrillic-safe)
  * @param {string} subjectName - Название предмета
  * @param {Date} fromDate - Дата, от которой ищем (обычно сегодня)
  * @returns {Promise<{schedule: Schedule, date: Date}>} - Расписание и дата урока
  */
 async function findNextLesson(subjectName, fromDate = new Date()) {
-  // Получаем все уроки по этому предмету
-  const schedules = await Schedule.findAll({
-    where: {
-      subjectName: subjectName
-    },
-    order: [['dayOfWeek', 'ASC'], ['lessonNumber', 'ASC']]
+  // Fetch all ordered then filter via subjectsMatch (normalize + firstToken fallback)
+  const all = await Schedule.findAll({
+    order: [
+      ['dayOfWeek', 'ASC'],
+      ['lessonNumber', 'ASC'],
+    ],
   });
+
+  const schedules = all.filter((s) => subjectsMatch(s.subjectName, subjectName));
 
   if (schedules.length === 0) {
     return null;
   }
 
-  const currentDayOfWeek = getDayOfWeek(fromDate);
+  // Use Moscow day for correct timezone on server (host may be UTC)
+  // getMoscowDayOfWeek handles Intl Europe/Moscow; getDayOfWeek uses local TZ
+  // We prefer Moscow when fromDate is close to now, but for deterministic tests
+  // we need stable mapping: use getMoscowDayOfWeek if fromDate within 24h of now?
+  // Simpler: use getMoscowDayOfWeek for all, since it is timezone-safe.
+  const currentDayOfWeek = getMoscowDayOfWeek(fromDate);
   const currentDate = new Date(fromDate);
   currentDate.setHours(0, 0, 0, 0);
 
-  // Ищем ближайший урок на этой неделе
+  // Ищем ближайший урок на этой неделе (> today)
   for (const schedule of schedules) {
     if (schedule.dayOfWeek > currentDayOfWeek) {
       const lessonDate = getNextDayOfWeek(currentDate, schedule.dayOfWeek);
       return {
         schedule: schedule,
-        date: lessonDate
+        date: lessonDate,
       };
     }
   }
@@ -45,7 +54,7 @@ async function findNextLesson(subjectName, fromDate = new Date()) {
   const lessonDate = getNextDayOfWeek(currentDate, firstSchedule.dayOfWeek);
   return {
     schedule: firstSchedule,
-    date: lessonDate
+    date: lessonDate,
   };
 }
 
@@ -55,9 +64,9 @@ async function findNextLesson(subjectName, fromDate = new Date()) {
 async function getScheduleForDay(dayOfWeek) {
   return await Schedule.findAll({
     where: {
-      dayOfWeek: dayOfWeek
+      dayOfWeek: dayOfWeek,
     },
-    order: [['lessonNumber', 'ASC']]
+    order: [['lessonNumber', 'ASC']],
   });
 }
 
@@ -75,7 +84,7 @@ async function getHomeworkForDate(userId, date) {
 
   const visibility = await getHomeworkVisibility();
   const where = {
-    date: date.toISOString().split('T')[0]
+    date: date.toISOString().split('T')[0],
   };
 
   // В личном режиме фильтруем по userId, в общем — нет
@@ -85,17 +94,19 @@ async function getHomeworkForDate(userId, date) {
 
   const homeworks = await Homework.findAll({
     where,
-    include: [{
-      model: Schedule,
-      as: 'schedule'
-    }],
-    order: [['schedule', 'lessonNumber', 'ASC']]
+    include: [
+      {
+        model: Schedule,
+        as: 'schedule',
+      },
+    ],
+    order: [['schedule', 'lessonNumber', 'ASC']],
   });
 
   return {
     date,
     schedules,
-    homeworks
+    homeworks,
   };
 }
 
@@ -121,7 +132,7 @@ async function getHomeworkForWeek(userId, startDate = new Date()) {
 function formatHomework(homeworkData) {
   const { date, schedules, homeworks } = homeworkData;
   const { formatDate, getDayName } = require('./dateUtils');
-  
+
   const dayOfWeek = getDayOfWeek(date);
   let result = `📅 ${getDayName(dayOfWeek)}, ${formatDate(date)}\n\n`;
 
@@ -132,12 +143,12 @@ function formatHomework(homeworkData) {
 
   // Создаем мапу домашних заданий по scheduleId
   const homeworkMap = new Map();
-  homeworks.forEach(hw => {
+  homeworks.forEach((hw) => {
     homeworkMap.set(hw.scheduleId, hw.content);
   });
 
   // Выводим уроки с домашним заданием
-  schedules.forEach(schedule => {
+  schedules.forEach((schedule) => {
     const homework = homeworkMap.get(schedule.id);
     if (homework) {
       result += `${schedule.lessonNumber}. ${schedule.subjectName}\n`;
@@ -156,5 +167,5 @@ module.exports = {
   getScheduleForDay,
   getHomeworkForDate,
   getHomeworkForWeek,
-  formatHomework
+  formatHomework,
 };

@@ -72,19 +72,34 @@ async function syncDatabase() {
   try {
     await sequelize.sync({ alter: true });
     console.log('✅ Модели синхронизированы с базой данных.');
+    try {
+      const { seedLessonTimes } = require('../utils/seedLessonTimes');
+      await seedLessonTimes();
+      console.log('✅ LessonTimes seeded.');
+    } catch (seedErr) {
+      console.warn('⚠️ LessonTimes seeding failed:', seedErr.message || seedErr);
+    }
   } catch (error) {
     console.error('❌ Ошибка синхронизации:', error);
 
     // Попытка безопасно восстановить отсутствующие таблицы по-отдельности.
     try {
       // Подключаем модели динамически, чтобы гарантировать их регистрацию в sequelize
-      const { Setting, Schedule, Homework } = require('../models');
+      const { Setting, Schedule, Homework, LessonTime } = require('../models');
 
       // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
       await Setting.sync();
       await Schedule.sync();
       await Homework.sync();
+      await LessonTime.sync();
       console.log('✅ Отдельные таблицы созданы/синхронизированы (fallback).');
+      try {
+        const { seedLessonTimes } = require('../utils/seedLessonTimes');
+        await seedLessonTimes();
+        console.log('✅ LessonTimes seeded (fallback).');
+      } catch (seedErr) {
+        console.warn('⚠️ LessonTimes seeding failed (fallback):', seedErr.message || seedErr);
+      }
     } catch (fallbackErr) {
       console.error('❌ Fallback синхронизации моделей не удался:', fallbackErr);
     }

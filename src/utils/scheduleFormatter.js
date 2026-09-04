@@ -28,12 +28,18 @@ function formatWeeklySchedule(grouped, header = '📅 Расписание на 
     if (grouped[day]) {
       message += `${getDayName(day)}:\n`;
       grouped[day].forEach((s) => {
-        message += `  [ID: ${s.id}] ${s.lessonNumber}. ${s.subjectName}\n`;
+        const roomSuffix = s.room ? ` — каб. ${s.room}` : '';
+        message += `  [ID: ${s.id}] ${s.lessonNumber}. ${s.subjectName}${roomSuffix}\n`;
       });
       message += '\n';
     }
   }
   return message;
+}
+
+function formatBellSchedule(rows, header = '🔔 Расписание звонков:\n') {
+  const { formatBellSchedule: fb } = require('./lessonFormatter');
+  return fb(rows, header);
 }
 
 /**
@@ -52,4 +58,5 @@ module.exports = {
   groupByDay,
   formatWeeklySchedule,
   formatScheduleForEdit,
+  formatBellSchedule,
 };

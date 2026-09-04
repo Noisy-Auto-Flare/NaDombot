@@ -29,6 +29,11 @@ const Schedule = sequelize.define('Schedule', {
       max: 6  // Воскресенье
     },
     comment: 'День недели (0=Понедельник, 6=Воскресенье)'
+  },
+  room: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    comment: 'Кабинет/аудитория'
   }
 }, {
   tableName: 'schedules',
