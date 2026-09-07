@@ -3,6 +3,7 @@ const scheduleService = require('../services/scheduleService');
 const { groupByDay, formatWeeklySchedule, formatScheduleForEdit } = require('../utils/scheduleFormatter');
 const { isAdmin } = require('../middleware/isAdmin');
 const { cancelKeyboard, backKeyboard, backToMenuKeyboard, manageScheduleKeyboard } = require('../utils/keyboards');
+const { getQuickPickThreshold } = require('../utils/quickPickSettings');
 const {
   handleEditSelect,
   handleAdd,
@@ -12,6 +13,7 @@ const {
   handleDelete,
   handleBellSelect,
   handleBellTime,
+  handleQuickPickThreshold,
 } = require('./helpers/manageScheduleHelpers');
 
 const manageScheduleScene = new Scenes.WizardScene(
@@ -88,6 +90,20 @@ const manageScheduleScene = new Scenes.WizardScene(
       return ctx.wizard.next();
     }
 
+    if (action === 'edit_quick_pick_threshold') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      const current = await getQuickPickThreshold().catch(() => '16:30');
+      await ctx.reply(
+        `⏰ Текущий порог быстрых кнопок: ${current}\n\nПосле этого времени будут показываться ВСЕ уроки сегодня (7-8), до — только последние 4 прошедших.\n\nВведите новое время в формате HH:MM (например 16:30 или 17:00):`,
+        cancelKeyboard
+      );
+      ctx.wizard.state.action = 'edit_quick_pick_threshold';
+      return ctx.wizard.next();
+    }
+
     if (action === 'schedule_back') {
       await ctx.reply('📅 Управление расписанием\n\nВыберите действие:', manageScheduleKeyboard);
     }
@@ -114,6 +130,7 @@ const manageScheduleScene = new Scenes.WizardScene(
     if (action === 'delete') return handleDelete(ctx);
     if (action === 'edit_bells_select') return handleBellSelect(ctx);
     if (action === 'edit_bells_time') return handleBellTime(ctx);
+    if (action === 'edit_quick_pick_threshold') return handleQuickPickThreshold(ctx);
   },
 );
 

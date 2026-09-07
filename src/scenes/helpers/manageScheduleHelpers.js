@@ -4,6 +4,7 @@ const lessonTimeService = require('../../services/LessonTimeService');
 const { parseLessonInput, parseRoomInput } = require('../../utils/scheduleValidator');
 const { validateTimeRange } = require('../../utils/lessonTimeValidator');
 const { cancelKeyboard, backKeyboard } = require('../../utils/keyboards');
+const { setQuickPickThreshold } = require('../../utils/quickPickSettings');
 const ROOM_PROMPT = 'В каком кабинете проходит урок? (отправьте номер, или \'-\' чтобы пропустить)';
 function parseBellInput(text) {
   const t = String(text).trim();
@@ -235,6 +236,24 @@ async function handleBellTime(ctx) {
     return ctx.wizard.back();
   }
 }
+/**
+ * Обработка ввода порога быстрых кнопок HH:MM.
+ * @param {import('telegraf').Context} ctx
+ */
+async function handleQuickPickThreshold(ctx) {
+  const text = ctx.message.text.trim();
+  try {
+    const hhmm = await setQuickPickThreshold(text);
+    await ctx.reply(
+      `✅ Порог быстрых кнопок обновлён! Теперь после ${hhmm} будут показываться все уроки дня (вместо последних 4).`,
+      backKeyboard
+    );
+    return ctx.wizard.back();
+  } catch (e) {
+    await ctx.reply(e.message, cancelKeyboard);
+  }
+}
+
 module.exports = {
   handleEditSelect,
   handleAdd,
@@ -244,6 +263,7 @@ module.exports = {
   handleDelete,
   handleBellSelect,
   handleBellTime,
+  handleQuickPickThreshold,
   parseBellInput,
   ROOM_PROMPT,
 };
