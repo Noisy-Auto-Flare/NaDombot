@@ -3,6 +3,7 @@ const { Homework } = require('../models');
 const scheduleService = require('../services/scheduleService');
 const { getMoscowNow, getMoscowDayOfWeek } = require('../utils/moscowTime');
 const { formatDate, getDayName } = require('../utils/dateUtils');
+const { getRecentLessonRows } = require('../utils/recentLessons');
 
 /**
  * Короткое название дня недели для клавиатуры дат
@@ -29,9 +30,7 @@ function buildDateKeyboard(schedules, baseDate) {
     d.setDate(baseDate.getDate() + i);
 
     const dayOfWeek = getMoscowDayOfWeek(d);
-    const matching = schedules
-      .filter((s) => s.dayOfWeek === dayOfWeek)
-      .sort((a, b) => a.lessonNumber - b.lessonNumber);
+    const matching = schedules.filter((s) => s.dayOfWeek === dayOfWeek).sort((a, b) => a.lessonNumber - b.lessonNumber);
 
     if (matching.length === 0) continue;
 
@@ -42,7 +41,7 @@ function buildDateKeyboard(schedules, baseDate) {
 
     buttons.push({
       text: label,
-      callback_data: `hw_date:${isoDate}:${matching[0].id}`,
+      callback_data: `hw_date:${isoDate}:${matching[0].id}`
     });
   }
 
@@ -71,12 +70,27 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
+    let quickRows = [];
+    try {
+      quickRows = await getRecentLessonRows({ limit: 4, now: new Date() });
+    } catch (e) {
+      console.error('quick rows error', e);
+      quickRows = [];
+    }
+    const keyboard = [];
+    for (const row of quickRows) {
+      keyboard.push([{ text: `📚 ${row.subjectName} (${row.lessonNumber} урок)`, callback_data: `quick:${row.id}` }]);
+    }
+    keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
+
+    const quickHint = quickRows.length ? '\n\n_Или выберите быстрый вариант из последних уроков:_' : '';
     await ctx.reply(
-      '📚 Введите название предмета, по которому хотите добавить домашнее задание на конкретную дату:',
+      '📚 Введите название предмета, по которому хотите добавить домашнее задание на конкретную дату:' + quickHint,
       {
+        parse_mode: quickRows.length ? 'Markdown' : undefined,
         reply_markup: {
-          inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]],
-        },
+          inline_keyboard: keyboard
+        }
       }
     );
     return ctx.wizard.next();
@@ -90,10 +104,73 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         await ctx.answerCbQuery();
         await ctx.reply('❌ Действие отменено.', {
           reply_markup: {
-            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-          },
+            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+          }
         });
         return ctx.scene.leave();
+      }
+
+      if (data.startsWith('quick:')) {
+        const id = Number(data.split(':')[1]);
+        let row;
+        try {
+          row = await scheduleService.findById(id);
+        } catch (e) {
+          console.error('quick lookup error', e);
+          row = null;
+        }
+        if (!row) {
+          await ctx.answerCbQuery('❌ Урок не найден');
+          return;
+        }
+        await ctx.answerCbQuery();
+        const subjectName = row.subjectName;
+        ctx.wizard.state.subjectName = subjectName;
+        try {
+          const schedules = await scheduleService.findBySubjectNormalized(subjectName);
+          if (!schedules || schedules.length === 0) {
+            await ctx.reply(
+              `❌ Предмет "${subjectName}" не найден в расписании.\n\n` +
+                `Пожалуйста, убедитесь, что название предмета совпадает с расписанием, ` +
+                `или обратитесь к администратору для добавления предмета в расписание.`,
+              {
+                reply_markup: {
+                  inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+                }
+              }
+            );
+            return ctx.scene.leave();
+          }
+          const { isoDate } = getMoscowNow();
+          const [y, m, d] = isoDate.split('-').map(Number);
+          const baseDate = new Date(y, m - 1, d, 12, 0, 0, 0);
+          const keyboard = buildDateKeyboard(schedules, baseDate);
+          if (!keyboard) {
+            await ctx.reply(`❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`, {
+              reply_markup: {
+                inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+              }
+            });
+            return ctx.scene.leave();
+          }
+          await ctx.reply(
+            `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):`,
+            {
+              reply_markup: {
+                inline_keyboard: keyboard
+              }
+            }
+          );
+          return;
+        } catch (error) {
+          console.error('Ошибка при поиске предмета:', error);
+          await ctx.reply('❌ Произошла ошибка при поиске предмета. Попробуйте позже.', {
+            reply_markup: {
+              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+            }
+          });
+          return ctx.scene.leave();
+        }
       }
 
       if (data.startsWith('hw_date_na:')) {
@@ -114,8 +191,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
             await ctx.answerCbQuery();
             await ctx.reply('❌ Урок не найден. Попробуйте ещё раз.', {
               reply_markup: {
-                inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-              },
+                inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+              }
             });
             return ctx.scene.leave();
           }
@@ -134,8 +211,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
             `📝 Теперь введите текст домашнего задания для ${schedule.subjectName} на ${getDayName(dayOfWeek)}, ${formatDate(date)} (${schedule.lessonNumber} урок):`,
             {
               reply_markup: {
-                inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]],
-              },
+                inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]]
+              }
             }
           );
           return ctx.wizard.next();
@@ -144,8 +221,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           await ctx.answerCbQuery();
           await ctx.reply('❌ Произошла ошибка. Попробуйте позже.', {
             reply_markup: {
-              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-            },
+              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+            }
           });
           return ctx.scene.leave();
         }
@@ -173,8 +250,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
             `или обратитесь к администратору для добавления предмета в расписание.`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-            },
+              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+            }
           }
         );
         return ctx.scene.leave();
@@ -188,14 +265,11 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       const keyboard = buildDateKeyboard(schedules, baseDate);
 
       if (!keyboard) {
-        await ctx.reply(
-          `❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`,
-          {
-            reply_markup: {
-              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-            },
+        await ctx.reply(`❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`, {
+          reply_markup: {
+            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
           }
-        );
+        });
         return ctx.scene.leave();
       }
 
@@ -203,8 +277,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):`,
         {
           reply_markup: {
-            inline_keyboard: keyboard,
-          },
+            inline_keyboard: keyboard
+          }
         }
       );
       // Остаёмся на этом же шаге — ждём callback с выбором даты
@@ -213,8 +287,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       console.error('Ошибка при поиске предмета:', error);
       await ctx.reply('❌ Произошла ошибка при поиске предмета. Попробуйте позже.', {
         reply_markup: {
-          inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-        },
+          inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+        }
       });
       return ctx.scene.leave();
     }
@@ -227,8 +301,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       if (action === 'back_to_menu' || action === 'homework_cancel') {
         await ctx.reply('❌ Действие отменено.', {
           reply_markup: {
-            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-          },
+            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+          }
         });
         return ctx.scene.leave();
       }
@@ -245,8 +319,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     if (!content || content.length === 0) {
       await ctx.reply('❌ Текст домашнего задания не может быть пустым. Попробуйте еще раз:', {
         reply_markup: {
-          inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]],
-        },
+          inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]]
+        }
       });
       return;
     }
@@ -256,7 +330,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         userId: ctx.from.id,
         scheduleId: scheduleId,
         date: date.toISOString().split('T')[0],
-        content: content,
+        content: content
       });
 
       const dayOfWeek = getMoscowDayOfWeek(date);
@@ -269,16 +343,16 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           `📝 ${content}`,
         {
           reply_markup: {
-            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-          },
+            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+          }
         }
       );
     } catch (error) {
       console.error('Ошибка при сохранении домашнего задания:', error);
       await ctx.reply('❌ Произошла ошибка при сохранении домашнего задания. Попробуйте позже.', {
         reply_markup: {
-          inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
-        },
+          inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+        }
       });
     }
 
