@@ -12,7 +12,7 @@ async function handleStart(ctx) {
   const admin = isAdmin(ctx);
   const keyboard = [
     [{ text: '➕ Добавить домашнее задание', callback_data: 'add_homework' }],
-    [{ text: '📅 Добавить ДЗ на дату', callback_data: 'add_homework_on_date' }],
+    [{ text: '✚ Добавить ДЗ на дату', callback_data: 'add_homework_on_date' }],
     [{ text: '📅 Домашнее задание на завтра', callback_data: 'homework_tomorrow' }],
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }],
     [{ text: '🏫 В каком кабинете урок', callback_data: 'current_lesson' }]

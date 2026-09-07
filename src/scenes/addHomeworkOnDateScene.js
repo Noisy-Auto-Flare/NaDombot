@@ -15,15 +15,16 @@ function getShortDayName(dayOfWeek) {
 }
 
 /**
- * Сгенерировать клавиатуру дат на 14 дней для предмета
+ * Сгенерировать клавиатуру дат на 14 дней вперёд для предмета
+ * Показывает только даты где есть урок (начиная с завтра), без серых кнопок
  * @param {Array} schedules - все Schedule по предмету (отфильтрованные по subjectsMatch)
  * @param {Date} baseDate - базовый Date (12:00) московской сегодняшней даты
- * @returns {Array<Array<{text:string,callback_data:string}>>}
+ * @returns {Array<Array<{text:string,callback_data:string}>>|null} null если нет дат с уроком
  */
 function buildDateKeyboard(schedules, baseDate) {
   const buttons = [];
 
-  for (let i = 0; i < 14; i++) {
+  for (let i = 1; i <= 14; i++) {
     const d = new Date(baseDate);
     d.setDate(baseDate.getDate() + i);
 
@@ -32,31 +33,25 @@ function buildDateKeyboard(schedules, baseDate) {
       .filter((s) => s.dayOfWeek === dayOfWeek)
       .sort((a, b) => a.lessonNumber - b.lessonNumber);
 
+    if (matching.length === 0) continue;
+
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const isoDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const label = `${getShortDayName(dayOfWeek)} ${dd}.${mm}`;
 
-    if (matching.length > 0) {
-      buttons.push({
-        text: label,
-        callback_data: `hw_date:${isoDate}:${matching[0].id}`,
-      });
-    } else {
-      buttons.push({
-        text: `❌ ${label}`,
-        callback_data: `hw_date_na:${isoDate}`,
-      });
-    }
+    buttons.push({
+      text: label,
+      callback_data: `hw_date:${isoDate}:${matching[0].id}`,
+    });
   }
 
-  // Раскладка по 4 в ряд для удобства на мобильных (4+4+3+3 = 14, но компактнее 7+7)
-  // Выбираем 4 в ряд как более читаемый вариант (спецификация допускает оба)
+  if (buttons.length === 0) return null;
+
   const keyboard = [];
-  for (let i = 0; i < buttons.length; i += 4) {
-    keyboard.push(buttons.slice(i, i + 4));
+  for (let i = 0; i < buttons.length; i += 3) {
+    keyboard.push(buttons.slice(i, i + 3));
   }
-  // Альтернатива компактная 7 в ряд — оставим 4 для читаемости, легко поменять на 7
   keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
 
   return keyboard;
@@ -192,8 +187,20 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
       const keyboard = buildDateKeyboard(schedules, baseDate);
 
+      if (!keyboard) {
+        await ctx.reply(
+          `❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]],
+            },
+          }
+        );
+        return ctx.scene.leave();
+      }
+
       await ctx.reply(
-        `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\n(показаны все даты, кликабельны только дни с уроком)`,
+        `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):`,
         {
           reply_markup: {
             inline_keyboard: keyboard,
