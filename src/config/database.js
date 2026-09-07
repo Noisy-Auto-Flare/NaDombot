@@ -55,7 +55,7 @@ async function syncDatabase() {
       console.log('Обнаружена битая схема schedules (индивидуальные UNIQUE), пересоздаю таблицу...');
       // бэкап для отката (если данные есть)
       let backup = [];
-      try { backup = await sequelize.query("SELECT * FROM schedules", { type: Sequelize.QueryTypes.SELECT }); } catch {}
+      try { backup = await sequelize.query("SELECT * FROM schedules", { type: Sequelize.QueryTypes.SELECT }); } catch (_e) { void _e; }
       await sequelize.query("DROP TABLE IF EXISTS schedules");
       const { Schedule } = require('../models');
       await Schedule.sync();
@@ -67,7 +67,7 @@ async function syncDatabase() {
           const key = `${r.dayOfWeek}-${r.lessonNumber}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          try { await Schedule.create({ dayOfWeek: r.dayOfWeek, lessonNumber: r.lessonNumber, subjectName: r.subjectName, room: r.room }); restored++; } catch {}
+          try { await Schedule.create({ dayOfWeek: r.dayOfWeek, lessonNumber: r.lessonNumber, subjectName: r.subjectName, room: r.room }); restored++; } catch (_e2) { void _e2; }
         }
         if (restored) console.log(`✅ Восстановлено ${restored} строк schedules из бэкапа`);
       }
@@ -93,7 +93,7 @@ async function syncDatabase() {
   }
   try {
     // гарантируем что все модели зарегистрированы до sync
-    try { require('../models'); } catch {}
+    try { require('../models'); } catch (_e3) { void _e3; }
     await sequelize.sync({ alter: true });
     console.log('✅ Модели синхронизированы с базой данных.');
     try {
