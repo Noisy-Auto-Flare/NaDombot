@@ -1,6 +1,7 @@
 const { getMoscowNow, parseHHMM } = require('./moscowTime');
 const LessonTimeService = require('../services/LessonTimeService');
 const scheduleService = require('../services/scheduleService');
+const { getQuickPickThreshold } = require('./quickPickSettings');
 
 /**
  * Получить последние прошедшие уроки сегодня (до 4)
@@ -20,6 +21,18 @@ async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
     .sort((a, b) => a.lessonNumber - b.lessonNumber);
 
   if (todayRows.length === 0) return [];
+
+  let thresholdMinutes;
+  try {
+    const thresholdStr = await getQuickPickThreshold();
+    thresholdMinutes = parseHHMM(thresholdStr);
+  } catch (_e) {
+    thresholdMinutes = parseHHMM('16:30');
+  }
+
+  if (nowMinutes >= thresholdMinutes) {
+    return todayRows;
+  }
 
   const passed = todayRows.filter((row) => {
     const bell = bellMap.get(row.lessonNumber);
