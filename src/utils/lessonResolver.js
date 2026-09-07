@@ -38,13 +38,15 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
     nowMinutes = parseHHMM(m.hhmm);
     todayDay = m.dayOfWeek;
   }
+  const hhmm = `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(nowMinutes % 60).padStart(2, '0')}`;
+  const nowHHMM = hhmm;
   const bells = [];
   for (const [lessonNumber, v] of map.entries()) {
     bells.push({ lessonNumber, start: v.start, end: v.end, startMin: parseHHMM(v.start), endMin: parseHHMM(v.end) });
   }
   bells.sort((a, b) => a.lessonNumber - b.lessonNumber);
   if (bells.length === 0) {
-    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null };
+    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null, nowMinutes, nowHHMM };
   }
   // schedule-aware first/last: next/prev scheduled lesson, not just first/last bell
   const scheduledBells = bells.filter((b) => findRow(rows, b.lessonNumber, todayDay));
@@ -53,16 +55,16 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
   const first = bells[0];
   const last = bells[bells.length - 1];
   if (scheduledBells.length > 0 && nowMinutes < firstScheduled.startMin) {
-    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: firstScheduled.start, end: firstScheduled.end }, prevBell: null, nextLesson: toInfo(findRow(rows, firstScheduled.lessonNumber, todayDay)), prevLesson: null };
+    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: firstScheduled.start, end: firstScheduled.end }, prevBell: null, nextLesson: toInfo(findRow(rows, firstScheduled.lessonNumber, todayDay)), prevLesson: null, nowMinutes, nowHHMM };
   }
   if (nowMinutes < first.startMin) {
-    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: first.start, end: first.end }, prevBell: null, nextLesson: toInfo(findRow(rows, first.lessonNumber, todayDay)), prevLesson: null };
+    return { status: 'before', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: first.start, end: first.end }, prevBell: null, nextLesson: toInfo(findRow(rows, first.lessonNumber, todayDay)), prevLesson: null, nowMinutes, nowHHMM };
   }
   if (scheduledBells.length > 0 && nowMinutes >= lastScheduled.endMin) {
-    return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: lastScheduled.start, end: lastScheduled.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, lastScheduled.lessonNumber, todayDay)) };
+    return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: lastScheduled.start, end: lastScheduled.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, lastScheduled.lessonNumber, todayDay)), nowMinutes, nowHHMM };
   }
   if (nowMinutes >= last.endMin) {
-    return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: last.start, end: last.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, last.lessonNumber, todayDay)) };
+    return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: { start: last.start, end: last.end }, nextLesson: null, prevLesson: toInfo(findRow(rows, last.lessonNumber, todayDay)), nowMinutes, nowHHMM };
   }
   for (let i = 0; i < bells.length; i++) {
     const b = bells[i];
@@ -72,7 +74,7 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
       const nextBell = i < bells.length - 1 ? { start: bells[i + 1].start, end: bells[i + 1].end } : null;
       const prevRow = i > 0 ? findRow(rows, bells[i - 1].lessonNumber, todayDay) : null;
       const nextRow = i < bells.length - 1 ? findRow(rows, bells[i + 1].lessonNumber, todayDay) : null;
-      return { status: 'lesson', lessonNumber: b.lessonNumber, subjectName: row ? (row.subjectName ?? null) : null, room: row ? (row.room ?? null) : null, currentBell: { start: b.start, end: b.end }, nextBell, prevBell, nextLesson: toInfo(nextRow), prevLesson: toInfo(prevRow) };
+      return { status: 'lesson', lessonNumber: b.lessonNumber, subjectName: row ? (row.subjectName ?? null) : null, room: row ? (row.room ?? null) : null, currentBell: { start: b.start, end: b.end }, nextBell, prevBell, nextLesson: toInfo(nextRow), prevLesson: toInfo(prevRow), nowMinutes, nowHHMM };
     }
   }
   for (let i = 0; i < bells.length - 1; i++) {
@@ -94,12 +96,12 @@ function resolveCurrentLesson({ now, scheduleRows, bellMap }) {
       if (!nextScheduled) {
         const lastSched = prevScheduled || findRow(rows, lastScheduled?.lessonNumber ?? cur.lessonNumber, todayDay);
         const lastBell = prevScheduledBell || cur;
-        return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: lastBell ? { start: lastBell.start, end: lastBell.end } : null, nextLesson: null, prevLesson: toInfo(lastSched) };
+        return { status: 'after', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: lastBell ? { start: lastBell.start, end: lastBell.end } : null, nextLesson: null, prevLesson: toInfo(lastSched), nowMinutes, nowHHMM };
       }
-      return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: nextScheduledBell.start, end: nextScheduledBell.end }, prevBell: prevScheduledBell ? { start: prevScheduledBell.start, end: prevScheduledBell.end } : { start: cur.start, end: cur.end }, nextLesson: toInfo(nextScheduled), prevLesson: toInfo(prevScheduled) };
+      return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: { start: nextScheduledBell.start, end: nextScheduledBell.end }, prevBell: prevScheduledBell ? { start: prevScheduledBell.start, end: prevScheduledBell.end } : { start: cur.start, end: cur.end }, nextLesson: toInfo(nextScheduled), prevLesson: toInfo(prevScheduled), nowMinutes, nowHHMM };
     }
   }
-  return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null };
+  return { status: 'break', lessonNumber: null, subjectName: null, room: null, currentBell: null, nextBell: null, prevBell: null, nextLesson: null, prevLesson: null, nowMinutes, nowHHMM };
 }
 
 module.exports = { resolveCurrentLesson };
