@@ -12,6 +12,7 @@ async function handleStart(ctx) {
   const admin = isAdmin(ctx);
   const keyboard = [
     [{ text: '➕ Добавить домашнее задание', callback_data: 'add_homework' }],
+    [{ text: '📅 Добавить ДЗ на дату', callback_data: 'add_homework_on_date' }],
     [{ text: '📅 Домашнее задание на завтра', callback_data: 'homework_tomorrow' }],
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }],
     [{ text: '🏫 В каком кабинете урок', callback_data: 'current_lesson' }]
@@ -34,6 +35,7 @@ async function handleHelp(ctx) {
     '📚 Справка по использованию бота:\n\n' +
     'Основные функции:\n' +
     '• Добавить домашнее задание - добавьте ДЗ по любому предмету\n' +
+    '• Добавить ДЗ на дату - добавьте ДЗ на выбранную дату из ближайших 2 недель\n' +
     '• Домашнее задание на завтра - просмотр ДЗ на следующий день\n' +
     '• Домашнее задание на неделю - просмотр ДЗ на всю неделю\n\n';
   if (admin) {
@@ -48,6 +50,11 @@ async function handleHelp(ctx) {
 async function handleAddHomework(ctx) {
   await ctx.answerCbQuery();
   await ctx.scene.enter('addHomework');
+}
+
+async function handleAddHomeworkOnDate(ctx) {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter('addHomeworkOnDate');
 }
 
 async function handleHomeworkTomorrow(ctx) {
@@ -166,6 +173,7 @@ module.exports = {
   handleStart,
   handleHelp,
   handleAddHomework,
+  handleAddHomeworkOnDate,
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,

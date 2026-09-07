@@ -5,6 +5,7 @@ const { runCleanup } = require('./utils/cleanup');
 
 // Импорт сцен
 const addHomeworkScene = require('./scenes/addHomeworkScene');
+const addHomeworkOnDateScene = require('./scenes/addHomeworkOnDateScene');
 const manageScheduleScene = require('./scenes/manageScheduleScene');
 
 // Импорт обработчиков
@@ -12,6 +13,7 @@ const {
   handleStart,
   handleHelp,
   handleAddHomework,
+  handleAddHomeworkOnDate,
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,
@@ -21,7 +23,7 @@ const {
 } = require('./handlers/commands');
 
 // Регистрация сцен
-const stage = new Scenes.Stage([addHomeworkScene, manageScheduleScene]);
+const stage = new Scenes.Stage([addHomeworkScene, addHomeworkOnDateScene, manageScheduleScene]);
 bot.use(stage.middleware());
 
 // Регистрация команд
@@ -30,6 +32,7 @@ bot.command('help', handleHelp);
 
 // Регистрация обработчиков кнопок
 bot.action('add_homework', handleAddHomework);
+bot.action('add_homework_on_date', handleAddHomeworkOnDate);
 bot.action('homework_tomorrow', handleHomeworkTomorrow);
 bot.action('homework_week', handleHomeworkWeek);
 bot.action('current_lesson', handleCurrentLesson);
