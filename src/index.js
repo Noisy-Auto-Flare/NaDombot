@@ -25,7 +25,11 @@ const {
   handleToggleHomeworkVisibility,
   handleCurrentLesson,
   handleProfile,
-  handleSelectProfile
+  handleSelectProfile,
+  handleProfileEditClass,
+  handleProfileEditTrack,
+  handleProfileEditSubgroup,
+  handleProfileReset
 } = require('./handlers/commands');
 
 // Регистрация сцен
@@ -50,6 +54,11 @@ bot.action('manage_schedule', handleManageSchedule);
 bot.action('back_to_menu', handleBackToMenu);
 bot.action('toggle_hw_visibility', handleToggleHomeworkVisibility);
 bot.action('select_profile', handleSelectProfile);
+bot.action('profile', handleProfile);
+bot.action('profile_edit_class', handleProfileEditClass);
+bot.action('profile_edit_track', handleProfileEditTrack);
+bot.action('profile_edit_subgroup', handleProfileEditSubgroup);
+bot.action('profile_reset', handleProfileReset);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {

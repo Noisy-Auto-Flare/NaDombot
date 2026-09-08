@@ -17,7 +17,8 @@ async function handleStart(ctx) {
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }],
     [{ text: '🏫 В каком кабинете урок', callback_data: 'current_lesson' }]
   ];
-  // onboarding button if multiprofile enabled and no profile
+  let profileSummaryLine = '';
+  // onboarding button if multiprofile enabled and no profile, plus summary
   try {
     const { isMultiprofileEnabled } = require('../utils/settings');
     const { getUserProfile } = require('../utils/userProfile');
@@ -26,62 +27,193 @@ async function handleStart(ctx) {
       const profile = await getUserProfile(ctx.from.id);
       if (!profile) {
         keyboard.unshift([{ text: '👋 Выберите профиль', callback_data: 'select_profile' }]);
+      } else {
+        // краткий summary: 10А • Тех • Белова
+        let trackShort = profile.trackId || '—';
+        let subShort = profile.subgroupId || '—';
+        try {
+          const { Track, Subgroup } = require('../models');
+          if (profile.trackId) {
+            const t = await Track.findByPk(profile.trackId);
+            trackShort = t ? t.name : profile.trackId;
+          } else {
+            trackShort = 'Общий';
+          }
+          if (profile.subgroupId) {
+            const s = await Subgroup.findByPk(profile.subgroupId);
+            subShort = s ? s.teacherName || s.id : profile.subgroupId;
+          } else {
+            subShort = '—';
+          }
+        } catch (_e) {
+          // fallback to ids
+        }
+        profileSummaryLine = `\n👤 ${profile.classId} • ${trackShort} • ${subShort}\n`;
+        // ensure Профиль button exists
+        keyboard.push([{ text: '👤 Профиль', callback_data: 'profile' }]);
       }
     }
   } catch (_e) {
     // ignore
   }
+  // всегда показываем кнопку Профиль если multiprofile не проверялся (fallback)
+  if (!keyboard.some((row) => row[0] && row[0].callback_data === 'profile')) {
+    try {
+      const { isMultiprofileEnabled } = require('../utils/settings');
+      const enabled = await isMultiprofileEnabled();
+      if (enabled) keyboard.push([{ text: '👤 Профиль', callback_data: 'profile' }]);
+    } catch (_e) { void _e; }
+  }
   if (admin) {
     keyboard.push([{ text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }]);
     keyboard.push([{ text: '👥 Режим домашнего задания', callback_data: 'toggle_hw_visibility' }]);
   }
-  await ctx.reply(
-    `👋 Привет, ${ctx.from.first_name}!\n\n` +
-    `Это бот для ведения домашнего задания.\n` +
-    `Выберите действие из меню:`,
-    { reply_markup: { inline_keyboard: keyboard } }
-  );
+  const greeting =
+    `👋 Привет, ${ctx.from.first_name}!\n` +
+    (profileSummaryLine ? profileSummaryLine : '') +
+    `\nЭто бот для ведения домашнего задания.\n` +
+    `Выберите действие из меню:`;
+  await ctx.reply(greeting, { reply_markup: { inline_keyboard: keyboard } });
 }
 
 /**
- * Показать текущий профиль и кнопку изменить.
+ * Показать карточку профиля с inline-кнопками редактирования.
  * @param {object} ctx
  */
 async function handleProfile(ctx) {
   try {
     const { getUserProfile } = require('../utils/userProfile');
-    const { Track, Subgroup } = require('../models');
+    const { Class, Track, Subgroup } = require('../models');
     const profile = await getUserProfile(ctx.from.id);
     if (!profile) {
-      await ctx.reply('👤 Профиль не выбран.\n\nНажмите кнопку ниже чтобы выбрать.', {
-        reply_markup: { inline_keyboard: [[{ text: '👋 Выберите профиль', callback_data: 'select_profile' }]] }
+      await ctx.reply('❌ Профиль не выбран. Выберите класс, профиль и учителя:', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '👋 Выбрать профиль', callback_data: 'select_profile' }],
+            [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]
+          ]
+        }
       });
       return;
     }
+    // загрузить человекочитаемые названия
+    let classLabel = profile.classId;
+    try {
+      const c = await Class.findByPk(profile.classId);
+      if (c) classLabel = c.id;
+    } catch (_e) { void _e; }
     let trackLabel = 'Общий';
+    let trackIdPart = '';
     if (profile.trackId) {
       try {
         const t = await Track.findByPk(profile.trackId);
-        trackLabel = t ? t.name : profile.trackId;
+        if (t) {
+          trackLabel = t.name;
+          trackIdPart = ` (${t.id})`;
+        } else {
+          trackLabel = profile.trackId;
+          trackIdPart = ` (${profile.trackId})`;
+        }
       } catch (_e) {
         trackLabel = profile.trackId;
+        trackIdPart = ` (${profile.trackId})`;
       }
     }
     let subgroupLabel = 'Без группы';
     if (profile.subgroupId) {
       try {
         const s = await Subgroup.findByPk(profile.subgroupId);
-        subgroupLabel = s ? s.teacherName || s.id : profile.subgroupId;
+        if (s) subgroupLabel = s.teacherName || s.id;
+        else subgroupLabel = profile.subgroupId;
       } catch (_e) {
         subgroupLabel = profile.subgroupId;
       }
     }
-    await ctx.reply(`👤 Ваш профиль: ${profile.classId} ${trackLabel} ${subgroupLabel}`, {
-      reply_markup: { inline_keyboard: [[{ text: '✏️ Изменить', callback_data: 'select_profile' }]] }
-    });
+    const text =
+      '👤 Ваш профиль\n' +
+      `🏫 Класс: ${classLabel}\n` +
+      `🧬 Профиль: ${trackLabel}${trackIdPart}\n` +
+      `👩‍🏫 Английский: ${subgroupLabel}\n` +
+      '\nВыберите что изменить:';
+    const keyboard = [
+      [{ text: '🏫 Изменить класс', callback_data: 'profile_edit_class' }],
+      [{ text: '🧬 Изменить профиль', callback_data: 'profile_edit_track' }],
+      [{ text: '👩‍🏫 Изменить учителя', callback_data: 'profile_edit_subgroup' }],
+      [{ text: '🔄 Сбросить профиль', callback_data: 'profile_reset' }],
+      [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]
+    ];
+    await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });
   } catch (e) {
     console.error('handleProfile', e.message || e);
     await ctx.reply('❌ Ошибка при получении профиля. Попробуйте позже.');
+  }
+}
+
+/**
+ * Редактирование класса — re-enter selectProfile с edit=class
+ * @param {object} ctx
+ */
+async function handleProfileEditClass(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.scene.enter('selectProfile', { edit: 'class' });
+}
+
+/**
+ * Редактирование профиля (track)
+ * @param {object} ctx
+ */
+async function handleProfileEditTrack(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.scene.enter('selectProfile', { edit: 'track' });
+}
+
+/**
+ * Редактирование подгруппы учителя
+ * @param {object} ctx
+ */
+async function handleProfileEditSubgroup(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.scene.enter('selectProfile', { edit: 'subgroup' });
+}
+
+/**
+ * Сброс профиля — удаление UserProfile + денорма User
+ * @param {object} ctx
+ */
+async function handleProfileReset(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    const { UserProfile, User } = require('../models');
+    const uid = ctx.from.id;
+    try {
+      const p = await UserProfile.findByPk(uid);
+      if (p) await p.destroy();
+      else {
+        const p2 = await UserProfile.findByPk(String(uid));
+        if (p2) await p2.destroy();
+      }
+    } catch (_e) {
+      // fallback direct destroy
+      try {
+        await UserProfile.destroy({ where: { userId: uid } });
+      } catch (_e2) { void _e2; }
+      try {
+        await UserProfile.destroy({ where: { userId: String(uid) } });
+      } catch (_e3) { void _e3; }
+    }
+    try {
+      await User.update({ classId: null, trackId: null, subgroupId: null }, { where: { userId: uid } });
+    } catch (_e) {
+      try {
+        await User.update({ classId: null, trackId: null, subgroupId: null }, { where: { userId: String(uid) } });
+      } catch (_e2) { void _e2; }
+    }
+    await ctx.reply('🗑 Профиль сброшен', {
+      reply_markup: { inline_keyboard: [[{ text: '👋 Выбрать профиль', callback_data: 'select_profile' }], [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]] }
+    });
+  } catch (e) {
+    console.error('handleProfileReset', e.message || e);
+    await ctx.reply('❌ Не удалось сбросить профиль. Попробуйте позже.');
   }
 }
 
@@ -263,5 +395,9 @@ module.exports = {
   handleToggleHomeworkVisibility,
   handleCurrentLesson,
   handleProfile,
-  handleSelectProfile
+  handleSelectProfile,
+  handleProfileEditClass,
+  handleProfileEditTrack,
+  handleProfileEditSubgroup,
+  handleProfileReset
 };

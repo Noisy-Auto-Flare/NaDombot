@@ -183,7 +183,7 @@ async function syncDatabase() {
     } catch (seedErr) {
       console.warn('⚠️ LessonTimes seeding failed:', seedErr.message || seedErr);
     }
-    // V6 foundation seed: Class 10А, Track tech/soc, Subgroup belova/ivanova + бэкфилл schedules.classId
+    // V6 foundation seed: Class 10А, Track tech/soc, Subgroup belova/petrova + бэкфилл schedules.classId
     try {
       const { Class, Track, Subgroup } = require('../models');
       await Class.findOrCreate({
@@ -203,9 +203,25 @@ async function syncDatabase() {
         defaults: { subject: 'английский', teacherName: 'Белова', classId: null, active: true }
       });
       await Subgroup.findOrCreate({
-        where: { id: 'ivanova' },
-        defaults: { subject: 'английский', teacherName: 'Иванова', classId: null, active: true }
+        where: { id: 'petrova' },
+        defaults: { subject: 'английский', teacherName: 'Петрова', classId: null, active: true }
       });
+      // Миграция: удалить лишнюю подгруппу ivanova (было 3 учителя → 2)
+      try {
+        const removed = await Subgroup.destroy({ where: { id: 'ivanova' } });
+        if (removed) console.log('✅ Миграция: удалена лишняя подгруппа ivanova');
+      } catch (_rmIva) { void _rmIva; }
+      // Очистка расписаний с ivanova (FK cleanup: Homework before Schedule)
+      try {
+        const { Schedule: SchedForClean, Homework: HwForClean } = require('../models');
+        const ivanovaRows = await SchedForClean.findAll({ where: { subgroupId: 'ivanova' }, attributes: ['id'] }).catch(() => []);
+        if (ivanovaRows && ivanovaRows.length) {
+          const ids = ivanovaRows.map((r) => r.id);
+          try { await HwForClean.destroy({ where: { scheduleId: ids } }); } catch (_hw) { void _hw; }
+          await SchedForClean.destroy({ where: { subgroupId: 'ivanova' } });
+          console.log(`✅ Миграция: удалены ${ids.length} расписаний с ivanova`);
+        }
+      } catch (_cleanIva) { void _cleanIva; }
       // Бэкфилл существующих schedule без classId (legacy rows)
       try {
         await sequelize.query("UPDATE schedules SET classId='10А' WHERE classId IS NULL");
@@ -250,7 +266,16 @@ async function syncDatabase() {
         await Track.findOrCreate({ where: { id: 'tech', classId: '10А' }, defaults: { classId: '10А', name: 'Технологический профиль', isCommon: false } });
         await Track.findOrCreate({ where: { id: 'soc', classId: '10А' }, defaults: { classId: '10А', name: 'Социально-экономический профиль', isCommon: false } });
         await Subgroup.findOrCreate({ where: { id: 'belova' }, defaults: { subject: 'английский', teacherName: 'Белова', classId: null, active: true } });
-        await Subgroup.findOrCreate({ where: { id: 'ivanova' }, defaults: { subject: 'английский', teacherName: 'Иванова', classId: null, active: true } });
+        await Subgroup.findOrCreate({ where: { id: 'petrova' }, defaults: { subject: 'английский', teacherName: 'Петрова', classId: null, active: true } });
+        try { await Subgroup.destroy({ where: { id: 'ivanova' } }); } catch (_rmIva2) { void _rmIva2; }
+        try {
+          const ivanovaRows2 = await Schedule.findAll({ where: { subgroupId: 'ivanova' }, attributes: ['id'] }).catch(() => []);
+          if (ivanovaRows2 && ivanovaRows2.length) {
+            const ids2 = ivanovaRows2.map((r) => r.id);
+            try { await Homework.destroy({ where: { scheduleId: ids2 } }); } catch (_hw2) { void _hw2; }
+            await Schedule.destroy({ where: { subgroupId: 'ivanova' } });
+          }
+        } catch (_clean2) { void _clean2; }
         try { await sequelize.query("UPDATE schedules SET classId='10А' WHERE classId IS NULL"); } catch (_bf2) { void _bf2; }
         console.log('✅ V6 foundation seeded (fallback).');
       } catch (foundationFallbackErr) {
