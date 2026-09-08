@@ -96,6 +96,23 @@ async function syncDatabase() {
     // гарантируем что все модели зарегистрированы до sync
     try { require('../models'); } catch (_e3) { void _e3; }
     try { await sequelize.query('PRAGMA foreign_keys = OFF'); } catch (_fk) { void _fk; }
+    // V6 колонки ДО sync — иначе sync попробует создать unique_lesson_per_audience на несуществующей колонке
+    try {
+      const qii = sequelize.getQueryInterface();
+      const ddesc = await qii.describeTable('schedules').catch(()=>null);
+      if (ddesc && !ddesc.classId) {
+        await qii.addColumn('schedules', 'classId', { type: Sequelize.DataTypes.STRING(10), allowNull: false, defaultValue: '10А' });
+        console.log('✅ Prelim миграция: добавлен schedules.classId');
+      }
+      if (ddesc && !ddesc.trackId) {
+        await qii.addColumn('schedules', 'trackId', { type: Sequelize.DataTypes.STRING(20), allowNull: true, defaultValue: null });
+        console.log('✅ Prelim миграция: добавлен schedules.trackId');
+      }
+      if (ddesc && !ddesc.subgroupId) {
+        await qii.addColumn('schedules', 'subgroupId', { type: Sequelize.DataTypes.STRING(40), allowNull: true, defaultValue: null });
+        console.log('✅ Prelim миграция: добавлен schedules.subgroupId');
+      }
+    } catch(preMig){ console.warn('⚠️ Prelim V6 миграция:', preMig.message||preMig); }
     // Безопасный sync без alter — создаёт отсутствующие таблицы, не ломает существующие (SQLite alter в Sequelize 6 криво пересоздаёт UNIQUE).
     // Новые колонки/индексы V6 добавляем вручную ниже (совместимо с sync({alter:true}) по результату, но без бага).
     await sequelize.sync();
