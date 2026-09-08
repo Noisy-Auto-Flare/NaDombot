@@ -74,31 +74,38 @@ const RAW_SCHEDULE = [
   { dayOfWeek: 1, lessonNumber: 7, subjectName: 'литер', room: '3018' },
   { dayOfWeek: 1, lessonNumber: 8, subjectName: 'физ культ', room: 'БСЗ/МСЗ' },
   { dayOfWeek: 2, lessonNumber: 1, subjectName: 'рус спС/физ спТ', room: '3018/4003' },
-  { dayOfWeek: 2, lessonNumber: 2, subjectName: 'алгебра', room: '3046' },
+  { dayOfWeek: 2, lessonNumber: 2, subjectName: 'ОБЗР', room: '4013' },
   { dayOfWeek: 2, lessonNumber: 3, subjectName: 'англ', room: '4005/библ' },
-  { dayOfWeek: 2, lessonNumber: 4, subjectName: 'ОБЗР', room: '4013' },
-  { dayOfWeek: 2, lessonNumber: 5, subjectName: 'инфТ/общС', room: '1059/3021' },
-  { dayOfWeek: 2, lessonNumber: 6, subjectName: 'ВиС', room: '3046' },
-  { dayOfWeek: 2, lessonNumber: 7, subjectName: 'общТ/мат прС', room: '3028/3046' },
+  { dayOfWeek: 2, lessonNumber: 4, subjectName: 'алгебра', room: '3046' },
+  { dayOfWeek: 2, lessonNumber: 5, subjectName: 'проект', room: '3028' },
+  { dayOfWeek: 2, lessonNumber: 6, subjectName: 'общТ/мат прС', room: '3028/3046' },
+  { dayOfWeek: 2, lessonNumber: 7, subjectName: 'ВиС', room: '3046' },
   { dayOfWeek: 3, lessonNumber: 1, subjectName: 'РМГ', room: '2035' },
   { dayOfWeek: 3, lessonNumber: 2, subjectName: 'история', room: '3028' },
   { dayOfWeek: 3, lessonNumber: 3, subjectName: 'геометр', room: '3046' },
   { dayOfWeek: 3, lessonNumber: 4, subjectName: 'англ', room: '4005/библ' },
   { dayOfWeek: 3, lessonNumber: 5, subjectName: 'алгебра', room: '3046' },
-  { dayOfWeek: 3, lessonNumber: 6, subjectName: 'литер', room: '3018' },
-  { dayOfWeek: 4, lessonNumber: 1, subjectName: 'русский', room: '3018' },
+  { dayOfWeek: 3, lessonNumber: 6, subjectName: 'русский', room: '3018' },
+  { dayOfWeek: 3, lessonNumber: 7, subjectName: 'литер', room: '3018' },
+  { dayOfWeek: 4, lessonNumber: 1, subjectName: 'физика', room: '4003' },
   { dayOfWeek: 4, lessonNumber: 2, subjectName: 'англ', room: '4005/библ' },
-  { dayOfWeek: 4, lessonNumber: 3, subjectName: 'химия', room: '3023' },
+  { dayOfWeek: 4, lessonNumber: 3, subjectName: 'инфТ/общС', room: '1058/3021' },
   { dayOfWeek: 4, lessonNumber: 4, subjectName: 'литер', room: '3018' },
-  { dayOfWeek: 4, lessonNumber: 5, subjectName: 'физика', room: '4003' },
-  { dayOfWeek: 4, lessonNumber: 6, subjectName: 'физ культ', room: 'БСЗ/МСЗ' },
-  { dayOfWeek: 4, lessonNumber: 7, subjectName: 'инфТ/общС', room: '1059/3021' },
-  { dayOfWeek: 4, lessonNumber: 8, subjectName: 'проект', room: '3028' },
+  { dayOfWeek: 4, lessonNumber: 5, subjectName: 'химия', room: '3023' },
+  { dayOfWeek: 4, lessonNumber: 6, subjectName: 'физ культ', room: 'БСЗ' },
+  { dayOfWeek: 4, lessonNumber: 7, subjectName: 'инфТ/общС', room: '1058/3021' },
 ];
+
+function capitalizeSubject(name) {
+  if (!name) return name;
+  if (name === name.toUpperCase()) return name; // ОБЗР, ВиС, РМГ
+  if (['ВиС', 'ОБЗР', 'РМГ'].includes(name)) return name;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 const SCHEDULE_10A = RAW_SCHEDULE.map(r => {
   const picked = pickTechProfile(r.subjectName, r.room);
-  return { ...r, subjectName: picked.subject, room: picked.room };
+  return { ...r, subjectName: capitalizeSubject(picked.subject), room: picked.room };
 });
 
 async function run() {
