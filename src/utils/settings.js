@@ -4,6 +4,8 @@ const HOMEWORK_VISIBILITY_KEY = 'homework_visibility';
 const HOMEWORK_VISIBILITY_PERSONAL = 'personal';
 const HOMEWORK_VISIBILITY_SHARED = 'shared';
 
+const MULTIPROFILE_KEY = 'multiprofile_enabled';
+
 /**
  * Получить текущий режим видимости домашнего задания.
  * personal — у каждого своё (по userId)
@@ -70,12 +72,59 @@ function getHomeworkVisibilityLabel(mode) {
     : 'у каждого свой';
 }
 
+/**
+ * Получить флаг multiprofile_enabled (bool).
+ * По умолчанию выключен для обратной совместимости.
+ * @returns {Promise<boolean>}
+ */
+async function getMultiprofileEnabled() {
+  try {
+    const setting = await Setting.findByPk(MULTIPROFILE_KEY);
+    if (!setting) return false;
+    const v = String(setting.value).toLowerCase();
+    return v === '1' || v === 'true' || v === 'enabled';
+  } catch (err) {
+    console.error('Ошибка при получении настройки multiprofile:', err);
+    return false;
+  }
+}
+
+/**
+ * Установить флаг multiprofile_enabled.
+ * @param {boolean} enabled
+ * @returns {Promise<boolean>}
+ */
+async function setMultiprofileEnabled(enabled) {
+  const val = enabled ? '1' : '0';
+  try {
+    await Setting.upsert({
+      key: MULTIPROFILE_KEY,
+      value: val
+    });
+  } catch (err) {
+    console.error('Ошибка при сохранении настройки multiprofile:', err);
+  }
+  return !!enabled;
+}
+
+/**
+ * Alias для getMultiprofileEnabled — bool check.
+ * @returns {Promise<boolean>}
+ */
+async function isMultiprofileEnabled() {
+  return getMultiprofileEnabled();
+}
+
 module.exports = {
   HOMEWORK_VISIBILITY_PERSONAL,
   HOMEWORK_VISIBILITY_SHARED,
+  MULTIPROFILE_KEY,
   getHomeworkVisibility,
   setHomeworkVisibility,
   toggleHomeworkVisibility,
-  getHomeworkVisibilityLabel
+  getHomeworkVisibilityLabel,
+  getMultiprofileEnabled,
+  setMultiprofileEnabled,
+  isMultiprofileEnabled
 };
 

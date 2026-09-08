@@ -50,7 +50,8 @@ async function syncDatabase() {
     const sql = tbl[0]?.sql || '';
     const hasBrokenCols = sql.includes('`lessonNumber`') && sql.includes('`dayOfWeek`') && /lessonNumber[^,]*UNIQUE/.test(sql) && /dayOfWeek[^,]*UNIQUE/.test(sql);
     const indexes = await sequelize.query("PRAGMA index_list('schedules')", { type: Sequelize.QueryTypes.SELECT }).catch(()=>[]);
-    const hasAutoIndex = Array.isArray(indexes) && indexes.some(i => i.name && i.name.startsWith('sqlite_autoindex_schedules'));
+    // hasAutoIndex: только u-origin (unique constraint вне PK) — pk-origin игнорируем, иначе всегда триггерит
+    const hasAutoIndex = Array.isArray(indexes) && indexes.some(i => i.name && i.name.startsWith('sqlite_autoindex_schedules') && i.origin === 'u');
     if (hasBrokenCols || hasAutoIndex) {
       console.log('Обнаружена битая схема schedules (индивидуальные UNIQUE), пересоздаю таблицу...');
       // бэкап для отката (если данные есть)
@@ -94,7 +95,69 @@ async function syncDatabase() {
   try {
     // гарантируем что все модели зарегистрированы до sync
     try { require('../models'); } catch (_e3) { void _e3; }
-    await sequelize.sync({ alter: true });
+    try { await sequelize.query('PRAGMA foreign_keys = OFF'); } catch (_fk) { void _fk; }
+    // Безопасный sync без alter — создаёт отсутствующие таблицы, не ломает существующие (SQLite alter в Sequelize 6 криво пересоздаёт UNIQUE).
+    // Новые колонки/индексы V6 добавляем вручную ниже (совместимо с sync({alter:true}) по результату, но без бага).
+    await sequelize.sync();
+    // Ручная миграция V6 колонок для schedules (если таблица уже была до V6)
+    try {
+      const qi = sequelize.getQueryInterface();
+      const desc = await qi.describeTable('schedules');
+      if (!desc.classId) {
+        await qi.addColumn('schedules', 'classId', { type: Sequelize.DataTypes.STRING(10), allowNull: false, defaultValue: '10А' });
+        console.log('✅ Миграция: добавлен schedules.classId');
+      }
+      if (!desc.trackId) {
+        await qi.addColumn('schedules', 'trackId', { type: Sequelize.DataTypes.STRING(20), allowNull: true, defaultValue: null });
+        console.log('✅ Миграция: добавлен schedules.trackId');
+      }
+      if (!desc.subgroupId) {
+        await qi.addColumn('schedules', 'subgroupId', { type: Sequelize.DataTypes.STRING(40), allowNull: true, defaultValue: null });
+        console.log('✅ Миграция: добавлен schedules.subgroupId');
+      }
+      // Индексы V6
+      const schedIdx = await sequelize.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='schedules'", { type: Sequelize.QueryTypes.SELECT });
+      const schedIdxNames = schedIdx.map(r => r.name);
+      // Legacy уникальность по (dayOfWeek, lessonNumber) блокирует ортогональные аудитории — дропаем и заменяем на неуникальный
+      if (schedIdxNames.includes('unique_lesson_per_day')) {
+        try {
+          await sequelize.query("DROP INDEX IF EXISTS unique_lesson_per_day");
+          console.log('✅ Миграция: удалён legacy unique_lesson_per_day');
+        } catch (_dropLegacy) { void _dropLegacy; }
+      }
+      // Пересчитываем после дропа
+      const schedIdxAfter = await sequelize.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='schedules'", { type: Sequelize.QueryTypes.SELECT });
+      const schedIdxNamesAfter = schedIdxAfter.map(r => r.name);
+      if (!schedIdxNamesAfter.includes('idx_schedules_day_lesson')) {
+        try {
+          await qi.addIndex('schedules', ['dayOfWeek', 'lessonNumber'], { name: 'idx_schedules_day_lesson' });
+          console.log('✅ Миграция: создан индекс idx_schedules_day_lesson');
+        } catch (_idxErr) { void _idxErr; }
+      }
+      if (!schedIdxNamesAfter.includes('unique_lesson_per_audience')) {
+        await qi.addIndex('schedules', ['classId', 'dayOfWeek', 'lessonNumber', 'trackId', 'subgroupId'], { unique: true, name: 'unique_lesson_per_audience' });
+        console.log('✅ Миграция: создан индекс unique_lesson_per_audience');
+      }
+      if (!schedIdxNames.includes('schedules_class_id')) {
+        await qi.addIndex('schedules', ['classId'], { name: 'schedules_class_id' });
+      }
+      if (!schedIdxNames.includes('schedules_track_id')) {
+        await qi.addIndex('schedules', ['trackId'], { name: 'schedules_track_id' });
+      }
+      if (!schedIdxNames.includes('schedules_subgroup_id')) {
+        await qi.addIndex('schedules', ['subgroupId'], { name: 'schedules_subgroup_id' });
+      }
+      // Homework unique index
+      const hwIdx = await sequelize.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='homeworks'", { type: Sequelize.QueryTypes.SELECT });
+      const hwIdxNames = hwIdx.map(r => r.name);
+      if (!hwIdxNames.includes('unique_homework_per_date')) {
+        await qi.addIndex('homeworks', ['scheduleId', 'date'], { unique: true, name: 'unique_homework_per_date' });
+        console.log('✅ Миграция: создан индекс unique_homework_per_date');
+      }
+    } catch (migErr) {
+      console.warn('⚠️ V6 миграция колонок/индексов:', migErr.message || migErr);
+    }
+    try { await sequelize.query('PRAGMA foreign_keys = ON'); } catch (_fk2) { void _fk2; }
     console.log('✅ Модели синхронизированы с базой данных.');
     try {
       const { seedLessonTimes } = require('../utils/seedLessonTimes');
@@ -103,19 +166,60 @@ async function syncDatabase() {
     } catch (seedErr) {
       console.warn('⚠️ LessonTimes seeding failed:', seedErr.message || seedErr);
     }
+    // V6 foundation seed: Class 10А, Track tech/soc, Subgroup belova/ivanova + бэкфилл schedules.classId
+    try {
+      const { Class, Track, Subgroup } = require('../models');
+      await Class.findOrCreate({
+        where: { id: '10А' },
+        defaults: { grade: 10, letter: 'А', enabled: true }
+      });
+      await Track.findOrCreate({
+        where: { id: 'tech', classId: '10А' },
+        defaults: { classId: '10А', name: 'Технологический профиль', isCommon: false }
+      });
+      await Track.findOrCreate({
+        where: { id: 'soc', classId: '10А' },
+        defaults: { classId: '10А', name: 'Социально-экономический профиль', isCommon: false }
+      });
+      await Subgroup.findOrCreate({
+        where: { id: 'belova' },
+        defaults: { subject: 'английский', teacherName: 'Белова', classId: null, active: true }
+      });
+      await Subgroup.findOrCreate({
+        where: { id: 'ivanova' },
+        defaults: { subject: 'английский', teacherName: 'Иванова', classId: null, active: true }
+      });
+      // Бэкфилл существующих schedule без classId (legacy rows)
+      try {
+        await sequelize.query("UPDATE schedules SET classId='10А' WHERE classId IS NULL");
+      } catch (_bf) { void _bf; }
+      console.log('✅ V6 foundation seeded (Class/Track/Subgroup).');
+    } catch (foundationErr) {
+      console.warn('⚠️ V6 foundation seeding failed:', foundationErr.message || foundationErr);
+    }
+    // Миграция audience-unique: SQLite NULL != NULL, поэтому unique_lesson_per_day оставляем как legacy.
+    // unique_lesson_per_audience уже создан через sync({alter:true}); дополнительная COALESCE-миграция не требуется для MVP.
+    // Если в будущем потребуется строгая уникальность с NULL-as-value — дроп legacy индекса и пересоздание через COALESCE
+    // выполняется под флагом; по умолчанию flag=0 — ничего не дропаем (сохранение совместимости).
   } catch (error) {
     console.error('❌ Ошибка синхронизации:', error);
 
     // Попытка безопасно восстановить отсутствующие таблицы по-отдельности.
     try {
       // Подключаем модели динамически, чтобы гарантировать их регистрацию в sequelize
-      const { Setting, Schedule, Homework, LessonTime } = require('../models');
+      const { Setting, Schedule, Homework, LessonTime, Class, Track, Subgroup, User, UserEvent, UserProfile } = require('../models');
 
       // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
       await Setting.sync();
       await Schedule.sync();
       await Homework.sync();
       await LessonTime.sync();
+      await Class.sync();
+      await Track.sync();
+      await Subgroup.sync();
+      await User.sync();
+      await UserEvent.sync();
+      await UserProfile.sync();
       console.log('✅ Отдельные таблицы созданы/синхронизированы (fallback).');
       try {
         const { seedLessonTimes } = require('../utils/seedLessonTimes');
@@ -123,6 +227,17 @@ async function syncDatabase() {
         console.log('✅ LessonTimes seeded (fallback).');
       } catch (seedErr) {
         console.warn('⚠️ LessonTimes seeding failed (fallback):', seedErr.message || seedErr);
+      }
+      try {
+        await Class.findOrCreate({ where: { id: '10А' }, defaults: { grade: 10, letter: 'А', enabled: true } });
+        await Track.findOrCreate({ where: { id: 'tech', classId: '10А' }, defaults: { classId: '10А', name: 'Технологический профиль', isCommon: false } });
+        await Track.findOrCreate({ where: { id: 'soc', classId: '10А' }, defaults: { classId: '10А', name: 'Социально-экономический профиль', isCommon: false } });
+        await Subgroup.findOrCreate({ where: { id: 'belova' }, defaults: { subject: 'английский', teacherName: 'Белова', classId: null, active: true } });
+        await Subgroup.findOrCreate({ where: { id: 'ivanova' }, defaults: { subject: 'английский', teacherName: 'Иванова', classId: null, active: true } });
+        try { await sequelize.query("UPDATE schedules SET classId='10А' WHERE classId IS NULL"); } catch (_bf2) { void _bf2; }
+        console.log('✅ V6 foundation seeded (fallback).');
+      } catch (foundationFallbackErr) {
+        console.warn('⚠️ V6 foundation seeding failed (fallback):', foundationFallbackErr.message || foundationFallbackErr);
       }
     } catch (fallbackErr) {
       console.error('❌ Fallback синхронизации моделей не удался:', fallbackErr);

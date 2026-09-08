@@ -8,12 +8,29 @@ const {
   handleEditSelect,
   handleAdd,
   handleAddRoom,
+  handleAddAudienceClass,
+  handleAddAudienceTrack,
+  handleAddAudienceSubgroup,
   handleEdit,
   handleEditRoom,
+  handleEditAudienceClass,
+  handleEditAudienceTrack,
+  handleEditAudienceSubgroup,
   handleDelete,
   handleBellSelect,
   handleBellTime,
   handleQuickPickThreshold,
+  handleToggleMultiprofile,
+  handleClassList,
+  handleClassAdd,
+  handleClassDelete,
+  handleTrackList,
+  handleTrackAdd,
+  handleTrackDelete,
+  handleSubgroupList,
+  handleSubgroupAdd,
+  handleSubgroupDelete,
+  handleStats,
 } = require('./helpers/manageScheduleHelpers');
 
 const manageScheduleScene = new Scenes.WizardScene(
@@ -104,17 +121,89 @@ const manageScheduleScene = new Scenes.WizardScene(
       return ctx.wizard.next();
     }
 
+    if (action === 'schedule_classes') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      ctx.wizard.state.action = 'classes_list';
+      await handleClassList(ctx);
+      return ctx.wizard.next();
+    }
+
+    if (action === 'schedule_tracks') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      ctx.wizard.state.action = 'tracks_list';
+      await handleTrackList(ctx);
+      return ctx.wizard.next();
+    }
+
+    if (action === 'schedule_subgroups') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      ctx.wizard.state.action = 'subgroups_list';
+      await handleSubgroupList(ctx);
+      return ctx.wizard.next();
+    }
+
+    if (action === 'schedule_stats') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      ctx.wizard.state.action = 'stats';
+      await handleStats(ctx);
+      return;
+    }
+
+    if (action === 'schedule_toggle_multiprofile') {
+      if (!isAdmin(ctx)) {
+        await ctx.reply('❌ У вас нет прав администратора');
+        return;
+      }
+      ctx.wizard.state.action = 'toggle_multiprofile';
+      await handleToggleMultiprofile(ctx);
+      return;
+    }
+
     if (action === 'schedule_back') {
       await ctx.reply('📅 Управление расписанием\n\nВыберите действие:', manageScheduleKeyboard);
     }
   },
   async (ctx) => {
+    // Handle callbackQuery for audience selection and cancel/back
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
+      await ctx.answerCbQuery().catch(() => {});
       const a = ctx.callbackQuery.data;
       if (a === 'back_to_menu' || a === 'schedule_cancel') {
         await ctx.reply('❌ Действие отменено.', backToMenuKeyboard);
         return ctx.scene.leave();
+      }
+      const action = ctx.wizard.state.action;
+      // Audience callbacks
+      if (action === 'add_audience_class' || action === 'edit_audience_class') {
+        if (a.startsWith('audience_class_')) {
+          // For edit, delegate to edit handler (same logic)
+          if (action === 'edit_audience_class') return handleEditAudienceClass(ctx);
+          return handleAddAudienceClass(ctx);
+        }
+      }
+      if (action === 'add_audience_track' || action === 'edit_audience_track') {
+        if (a.startsWith('audience_track_')) {
+          if (action === 'edit_audience_track') return handleEditAudienceTrack(ctx);
+          return handleAddAudienceTrack(ctx);
+        }
+      }
+      if (action === 'add_audience_subgroup' || action === 'edit_audience_subgroup') {
+        if (a.startsWith('audience_subgroup_')) {
+          if (action === 'edit_audience_subgroup') return handleEditAudienceSubgroup(ctx);
+          return handleAddAudienceSubgroup(ctx);
+        }
       }
       return;
     }
@@ -124,13 +213,84 @@ const manageScheduleScene = new Scenes.WizardScene(
 
     if (action === 'edit_select') return handleEditSelect(ctx);
     if (action === 'edit') return handleEdit(ctx);
+    if (action === 'edit_audience_class') return handleAddAudienceClass(ctx);
+    if (action === 'edit_audience_track') return handleAddAudienceTrack(ctx);
+    if (action === 'edit_audience_subgroup') return handleAddAudienceSubgroup(ctx);
     if (action === 'edit_room') return handleEditRoom(ctx);
     if (action === 'add') return handleAdd(ctx);
+    if (action === 'add_audience_class') return handleAddAudienceClass(ctx);
+    if (action === 'add_audience_track') return handleAddAudienceTrack(ctx);
+    if (action === 'add_audience_subgroup') return handleAddAudienceSubgroup(ctx);
     if (action === 'add_room') return handleAddRoom(ctx);
     if (action === 'delete') return handleDelete(ctx);
     if (action === 'edit_bells_select') return handleBellSelect(ctx);
     if (action === 'edit_bells_time') return handleBellTime(ctx);
     if (action === 'edit_quick_pick_threshold') return handleQuickPickThreshold(ctx);
+    if (action === 'toggle_multiprofile') return handleToggleMultiprofile(ctx);
+    if (action === 'stats') return handleStats(ctx);
+    // Classes / Tracks / Subgroups list handling
+    if (action === 'classes_list' || action.startsWith('classes')) {
+      const text = ctx.message.text.trim();
+      // Heuristic: delete if starts with delete/удалить/del/-
+      const lower = text.toLowerCase();
+      if (lower.startsWith('delete ') || lower.startsWith('удалить ') || lower.startsWith('del ') || lower.startsWith('remove ')) {
+        const id = text.split(/\s+/).slice(1).join(' ').trim() || text;
+        ctx.message.text = id;
+        return handleClassDelete(ctx);
+      }
+      // If text is single token that looks like existing class ID and user might want delete,
+      // try add first; if SLOT_TAKEN and next word is delete hint, but we can't disambiguate.
+      // Default to add; for delete user can use explicit "delete <id>"
+      // Also support "🗑 <id>" style
+      if (text.startsWith('🗑')) {
+        ctx.message.text = text.replace('🗑', '').trim();
+        return handleClassDelete(ctx);
+      }
+      return handleClassAdd(ctx);
+    }
+    if (action === 'tracks_list' || action.startsWith('tracks')) {
+      const text = ctx.message.text.trim();
+      const lower = text.toLowerCase();
+      if (lower.startsWith('delete ') || lower.startsWith('удалить ') || lower.startsWith('del ') || lower.startsWith('remove ')) {
+        const rest = text.split(/\s+/).slice(1).join(' ').trim();
+        ctx.message.text = rest;
+        return handleTrackDelete(ctx);
+      }
+      if (text.startsWith('🗑')) {
+        ctx.message.text = text.replace('🗑', '').trim();
+        return handleTrackDelete(ctx);
+      }
+      // Try add first; if that fails because format needs 3 tokens, fallback to delete
+      try {
+        return await handleTrackAdd(ctx);
+      } catch (_e) {
+        return handleTrackDelete(ctx);
+      }
+    }
+    if (action === 'subgroups_list' || action.startsWith('subgroups')) {
+      const text = ctx.message.text.trim();
+      const lower = text.toLowerCase();
+      if (lower.startsWith('delete ') || lower.startsWith('удалить ') || lower.startsWith('del ') || lower.startsWith('remove ')) {
+        const rest = text.split(/\s+/).slice(1).join(' ').trim();
+        ctx.message.text = rest;
+        return handleSubgroupDelete(ctx);
+      }
+      if (text.startsWith('🗑')) {
+        ctx.message.text = text.replace('🗑', '').trim();
+        return handleSubgroupDelete(ctx);
+      }
+      const parts = text.split(/\s+/);
+      if (parts.length === 1) {
+        return handleSubgroupDelete(ctx);
+      }
+      return handleSubgroupAdd(ctx);
+    }
+    if (action === 'classes_add') return handleClassAdd(ctx);
+    if (action === 'classes_delete') return handleClassDelete(ctx);
+    if (action === 'tracks_add') return handleTrackAdd(ctx);
+    if (action === 'tracks_delete') return handleTrackDelete(ctx);
+    if (action === 'subgroups_add') return handleSubgroupAdd(ctx);
+    if (action === 'subgroups_delete') return handleSubgroupDelete(ctx);
   },
 );
 

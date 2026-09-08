@@ -7,6 +7,10 @@ const { runCleanup } = require('./utils/cleanup');
 const addHomeworkScene = require('./scenes/addHomeworkScene');
 const addHomeworkOnDateScene = require('./scenes/addHomeworkOnDateScene');
 const manageScheduleScene = require('./scenes/manageScheduleScene');
+const selectProfileScene = require('./scenes/selectProfileScene');
+
+// Импорт middleware
+const { lazyOnboarding } = require('./middleware/lazyOnboarding');
 
 // Импорт обработчиков
 const {
@@ -19,16 +23,22 @@ const {
   handleManageSchedule,
   handleBackToMenu,
   handleToggleHomeworkVisibility,
-  handleCurrentLesson
+  handleCurrentLesson,
+  handleProfile,
+  handleSelectProfile
 } = require('./handlers/commands');
 
+// Lazy onboarding после telemetry
+bot.use(lazyOnboarding);
+
 // Регистрация сцен
-const stage = new Scenes.Stage([addHomeworkScene, addHomeworkOnDateScene, manageScheduleScene]);
+const stage = new Scenes.Stage([addHomeworkScene, addHomeworkOnDateScene, manageScheduleScene, selectProfileScene]);
 bot.use(stage.middleware());
 
 // Регистрация команд
 bot.command('start', handleStart);
 bot.command('help', handleHelp);
+bot.command('profile', handleProfile);
 
 // Регистрация обработчиков кнопок
 bot.action('add_homework', handleAddHomework);
@@ -39,6 +49,7 @@ bot.action('current_lesson', handleCurrentLesson);
 bot.action('manage_schedule', handleManageSchedule);
 bot.action('back_to_menu', handleBackToMenu);
 bot.action('toggle_hw_visibility', handleToggleHomeworkVisibility);
+bot.action('select_profile', handleSelectProfile);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {

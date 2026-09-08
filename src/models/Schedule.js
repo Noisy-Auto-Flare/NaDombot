@@ -34,6 +34,24 @@ const Schedule = sequelize.define('Schedule', {
     type: DataTypes.STRING(20),
     allowNull: true,
     comment: 'Кабинет/аудитория'
+  },
+  classId: {
+    type: DataTypes.STRING(10),
+    allowNull: false,
+    defaultValue: '10А',
+    comment: 'FK → Class.id, аудитория класса (logical FK, без DB REFERENCES для SQLite ALTER совместимости)'
+  },
+  trackId: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'FK → Track.id, NULL = общий для всех треков (logical FK)'
+  },
+  subgroupId: {
+    type: DataTypes.STRING(40),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'FK → Subgroup.id, NULL = общий для всех подгрупп (logical FK)'
   }
 }, {
   tableName: 'schedules',
@@ -41,8 +59,21 @@ const Schedule = sequelize.define('Schedule', {
   indexes: [
     {
       fields: ['dayOfWeek', 'lessonNumber'],
+      name: 'idx_schedules_day_lesson'
+    },
+    {
+      fields: ['classId', 'dayOfWeek', 'lessonNumber', 'trackId', 'subgroupId'],
       unique: true,
-      name: 'unique_lesson_per_day'
+      name: 'unique_lesson_per_audience'
+    },
+    {
+      fields: ['classId']
+    },
+    {
+      fields: ['trackId']
+    },
+    {
+      fields: ['subgroupId']
     }
   ]
 });

@@ -12,4 +12,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // Middleware для сессий (необходимо для работы сцен)
 bot.use(session());
 
+// Телеметрия: upsert User + UserEvent на каждом апдейте (не блокирует обработку)
+bot.use(require('../middleware/userTelemetry').userTelemetry);
+
 module.exports = bot;

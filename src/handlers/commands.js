@@ -17,6 +17,20 @@ async function handleStart(ctx) {
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }],
     [{ text: '🏫 В каком кабинете урок', callback_data: 'current_lesson' }]
   ];
+  // onboarding button if multiprofile enabled and no profile
+  try {
+    const { isMultiprofileEnabled } = require('../utils/settings');
+    const { getUserProfile } = require('../utils/userProfile');
+    const enabled = await isMultiprofileEnabled();
+    if (enabled && ctx.from && ctx.from.id) {
+      const profile = await getUserProfile(ctx.from.id);
+      if (!profile) {
+        keyboard.unshift([{ text: '👋 Выберите профиль', callback_data: 'select_profile' }]);
+      }
+    }
+  } catch (_e) {
+    // ignore
+  }
   if (admin) {
     keyboard.push([{ text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }]);
     keyboard.push([{ text: '👥 Режим домашнего задания', callback_data: 'toggle_hw_visibility' }]);
@@ -27,6 +41,48 @@ async function handleStart(ctx) {
     `Выберите действие из меню:`,
     { reply_markup: { inline_keyboard: keyboard } }
   );
+}
+
+/**
+ * Показать текущий профиль и кнопку изменить.
+ * @param {object} ctx
+ */
+async function handleProfile(ctx) {
+  try {
+    const { getUserProfile } = require('../utils/userProfile');
+    const { Track, Subgroup } = require('../models');
+    const profile = await getUserProfile(ctx.from.id);
+    if (!profile) {
+      await ctx.reply('👤 Профиль не выбран.\n\nНажмите кнопку ниже чтобы выбрать.', {
+        reply_markup: { inline_keyboard: [[{ text: '👋 Выберите профиль', callback_data: 'select_profile' }]] }
+      });
+      return;
+    }
+    let trackLabel = 'Общий';
+    if (profile.trackId) {
+      try {
+        const t = await Track.findByPk(profile.trackId);
+        trackLabel = t ? t.name : profile.trackId;
+      } catch (_e) {
+        trackLabel = profile.trackId;
+      }
+    }
+    let subgroupLabel = 'Без группы';
+    if (profile.subgroupId) {
+      try {
+        const s = await Subgroup.findByPk(profile.subgroupId);
+        subgroupLabel = s ? s.teacherName || s.id : profile.subgroupId;
+      } catch (_e) {
+        subgroupLabel = profile.subgroupId;
+      }
+    }
+    await ctx.reply(`👤 Ваш профиль: ${profile.classId} ${trackLabel} ${subgroupLabel}`, {
+      reply_markup: { inline_keyboard: [[{ text: '✏️ Изменить', callback_data: 'select_profile' }]] }
+    });
+  } catch (e) {
+    console.error('handleProfile', e.message || e);
+    await ctx.reply('❌ Ошибка при получении профиля. Попробуйте позже.');
+  }
 }
 
 async function handleHelp(ctx) {
@@ -150,7 +206,28 @@ async function handleCurrentLesson(ctx) {
     const moscowNow = getMoscowNow(new Date());
     const bellMap = await LessonTimeService.getBellScheduleMap();
     const allRows = await scheduleService.findAll();
-    const todayRows = allRows.filter((r) => r.dayOfWeek === moscowNow.dayOfWeek);
+    let todayRows = allRows.filter((r) => r.dayOfWeek === moscowNow.dayOfWeek);
+    // Аудиторий-фильтрация если multiprofile включен
+    try {
+      const { isMultiprofileEnabled } = require('../utils/settings');
+      const enabled = await isMultiprofileEnabled();
+      if (enabled) {
+        const { UserProfile } = require('../models');
+        let profile = null;
+        try {
+          profile = await UserProfile.findByPk(ctx.from.id);
+          if (!profile) profile = await UserProfile.findByPk(String(ctx.from.id));
+        } catch (_e) {
+          profile = null;
+        }
+        if (profile) {
+          const { isVisible } = require('../utils/audience');
+          todayRows = todayRows.filter((r) => isVisible(r, profile));
+        }
+      }
+    } catch (_e) {
+      // fallback to unfiltered
+    }
     const result = resolveCurrentLesson({ now: moscowNow, scheduleRows: todayRows, bellMap });
     const message = formatCurrentLessonMessage(result);
     await ctx.reply(message, {
@@ -169,6 +246,11 @@ async function handleBackToMenu(ctx) {
   await handleStart(ctx);
 }
 
+async function handleSelectProfile(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.scene.enter('selectProfile');
+}
+
 module.exports = {
   handleStart,
   handleHelp,
@@ -179,5 +261,7 @@ module.exports = {
   handleManageSchedule,
   handleBackToMenu,
   handleToggleHomeworkVisibility,
-  handleCurrentLesson
+  handleCurrentLesson,
+  handleProfile,
+  handleSelectProfile
 };
