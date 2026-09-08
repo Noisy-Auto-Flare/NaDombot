@@ -48,14 +48,93 @@ async function getUserCountsBySubgroup() {
 /**
  * Все пользователи с профилем, сортировка по последней активности.
  * @param {number} [limit=50] - лимит записей
+ * @param {number} [offset=0] - смещение для пагинации
  * @returns {Promise<import('sequelize').Model[]>}
  */
-async function getAllUsersWithProfile(limit = 50) {
+async function getAllUsersWithProfile(limit = 50, offset = 0) {
   return User.findAll({
     include: [{ model: UserProfile, as: 'profile' }],
     order: [['lastSeenAt', 'DESC']],
-    limit
+    limit,
+    offset
   });
+}
+
+/**
+ * Пагинированный список пользователей (алиас для getAllUsersWithProfile).
+ * @param {number} [limit=10] - лимит записей
+ * @param {number} [offset=0] - смещение
+ * @returns {Promise<import('sequelize').Model[]>}
+ */
+async function getUsersPaginated(limit = 10, offset = 0) {
+  return getAllUsersWithProfile(limit, offset);
+}
+
+/**
+ * Детальная информация по пользователю: User + UserProfile + последние 10 событий.
+ * @param {string|number} userId - Telegram userId
+ * @returns {Promise<{user: import('sequelize').Model|null, profile: import('sequelize').Model|null, events: import('sequelize').Model[]}>}
+ */
+async function getUserDetail(userId) {
+  const id = userId;
+  let user = await User.findByPk(id, {
+    include: [{ model: UserProfile, as: 'profile' }]
+  });
+  if (!user) {
+    try {
+      user = await User.findByPk(String(id), {
+        include: [{ model: UserProfile, as: 'profile' }]
+      });
+    } catch (_e) {
+      // ignore
+    }
+  }
+  if (!user) {
+    return { user: null, profile: null, events: [] };
+  }
+  // profile может быть уже в user.profile через include
+  let profile = user.profile || null;
+  if (!profile) {
+    try {
+      profile = await UserProfile.findByPk(user.userId);
+      if (!profile) profile = await UserProfile.findByPk(String(user.userId));
+    } catch (_e) {
+      profile = null;
+    }
+  }
+  let events = [];
+  try {
+    events = await UserEvent.findAll({
+      where: { userId: user.userId },
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
+  } catch (_e) {
+    // fallback string id
+    try {
+      events = await UserEvent.findAll({
+        where: { userId: String(user.userId) },
+        order: [['createdAt', 'DESC']],
+        limit: 10
+      });
+    } catch (_e2) {
+      events = [];
+    }
+  }
+  // дублирующая попытка для String userId если events пустые но userId был строкой
+  if (events.length === 0) {
+    try {
+      const altEvents = await UserEvent.findAll({
+        where: { userId: String(id) },
+        order: [['createdAt', 'DESC']],
+        limit: 10
+      });
+      if (altEvents.length > 0) events = altEvents;
+    } catch (_e) {
+      // ignore
+    }
+  }
+  return { user, profile, events };
 }
 
 /**
@@ -105,6 +184,8 @@ module.exports = {
   getUserCountsByTrack,
   getUserCountsBySubgroup,
   getAllUsersWithProfile,
+  getUsersPaginated,
   getRecentEvents,
-  getStatsSummary
+  getStatsSummary,
+  getUserDetail
 };

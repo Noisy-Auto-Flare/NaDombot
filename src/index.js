@@ -21,6 +21,7 @@ const {
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,
+  handleAdminManage,
   handleBackToMenu,
   handleToggleHomeworkVisibility,
   handleCurrentLesson,
@@ -51,8 +52,63 @@ bot.action('homework_tomorrow', handleHomeworkTomorrow);
 bot.action('homework_week', handleHomeworkWeek);
 bot.action('current_lesson', handleCurrentLesson);
 bot.action('manage_schedule', handleManageSchedule);
+bot.action('admin_manage', handleAdminManage);
 bot.action('back_to_menu', handleBackToMenu);
 bot.action('toggle_hw_visibility', handleToggleHomeworkVisibility);
+// Новые админ-подменю — делегируем в сцену если внутри, иначе входим в сцену
+bot.action('lessons_manage', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  if (ctx.scene && ctx.scene.current && ctx.scene.current.id === 'manageSchedule') {
+    const { handleLessonsMenu } = require('./scenes/helpers/manageScheduleHelpers');
+    return handleLessonsMenu(ctx);
+  }
+  await ctx.scene.enter('manageSchedule');
+  // after enter, wizard step1 shows admin menu; schedule next tick show lessons
+  // we reply lessons menu as well to satisfy direct click from global menu (if any)
+  const { lessonsManageKeyboard } = require('./utils/keyboards');
+  await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard).catch(() => {});
+});
+bot.action('modes', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const { handleShowModes } = require('./scenes/helpers/manageScheduleHelpers');
+  // if inside scene, just show modes
+  if (ctx.scene && ctx.scene.current && ctx.scene.current.id === 'manageSchedule') {
+    return handleShowModes(ctx);
+  }
+  // outside scene — try to enter then show
+  await handleShowModes(ctx).catch(() => {});
+});
+bot.action('admin_back', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const { adminMainKeyboard } = require('./utils/keyboards');
+  await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard).catch(() => {});
+});
+bot.action('lessons_back', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const { lessonsManageKeyboard } = require('./utils/keyboards');
+  await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard).catch(() => {});
+});
+// Alias for schedule_back compatibility
+bot.action('schedule_back', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const { lessonsManageKeyboard } = require('./utils/keyboards');
+  await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard).catch(() => {});
+});
+// Legacy schedule_* aliases — handled inside scene, but keep global fallback to enter scene
+bot.action('schedule_add', handleAdminManage);
+bot.action('schedule_edit', handleAdminManage);
+bot.action('schedule_view', handleAdminManage);
+bot.action('schedule_delete', handleAdminManage);
+bot.action('edit_bells', handleAdminManage);
+bot.action('schedule_classes', handleAdminManage);
+bot.action('schedule_tracks', handleAdminManage);
+bot.action('schedule_subgroups', handleAdminManage);
+bot.action('schedule_stats', handleAdminManage);
+bot.action('schedule_toggle_multiprofile', async (ctx) => {
+  await ctx.answerCbQuery().catch(() => {});
+  const { handleShowModes } = require('./scenes/helpers/manageScheduleHelpers');
+  return handleShowModes(ctx);
+});
 bot.action('select_profile', handleSelectProfile);
 bot.action('profile', handleProfile);
 bot.action('profile_edit_class', handleProfileEditClass);

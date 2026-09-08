@@ -3,7 +3,7 @@ const scheduleService = require('../../services/scheduleService');
 const lessonTimeService = require('../../services/LessonTimeService');
 const { parseLessonInput, parseRoomInput } = require('../../utils/scheduleValidator');
 const { validateTimeRange } = require('../../utils/lessonTimeValidator');
-const { cancelKeyboard, backKeyboard } = require('../../utils/keyboards');
+const { cancelKeyboard, backKeyboard, lessonsManageKeyboard } = require('../../utils/keyboards');
 const { setQuickPickThreshold } = require('../../utils/quickPickSettings');
 const { normalizeSubject } = require('../../utils/subjectNormalizer');
 
@@ -797,6 +797,290 @@ async function handleStats(ctx) {
   }
 }
 
+function formatMoscowDateTime(date) {
+  if (!date) return '—';
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    const parts = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(d);
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
+  } catch (_e) {
+    try {
+      return new Date(date).toISOString().slice(0, 16).replace('T', ' ');
+    } catch (_e2) {
+      return String(date);
+    }
+  }
+}
+
+function formatMoscowDate(date) {
+  if (!date) return '—';
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    const parts = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(d);
+    // fallback simple
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    if (map.year && map.month && map.day) return `${map.year}-${map.month}-${map.day}`;
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  } catch (_e) {
+    try {
+      return new Date(date).toISOString().slice(0, 10);
+    } catch (_e2) {
+      return String(date);
+    }
+  }
+}
+
+function formatEventTime(date) {
+  if (!date) return '--:--';
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return String(date);
+    const parts = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Europe/Moscow',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(d);
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return `${map.hour}:${map.minute}`;
+  } catch (_e) {
+    return '--:--';
+  }
+}
+
+/**
+ * Список пользователей с пагинацией (10 на страницу).
+ * @param {import('telegraf').Context} ctx
+ * @param {number} [page=0]
+ */
+async function handleUsersList(ctx, page = 0) {
+  const { isAdmin } = require('../../middleware/isAdmin');
+  if (!isAdmin(ctx)) {
+    try { await ctx.answerCbQuery('❌ У вас нет прав администратора'); } catch (_e) { /* ignore */ }
+    return;
+  }
+  let targetPage = Number.isFinite(page) ? page : 0;
+  if (ctx.callbackQuery && ctx.callbackQuery.data) {
+    const data = ctx.callbackQuery.data;
+    if (data.startsWith('users_page:')) {
+      const p = parseInt(data.split(':')[1], 10);
+      if (!isNaN(p)) targetPage = p;
+    } else if (data === 'users_list' || data === 'schedule_users' || data === 'schedule_stats') {
+      targetPage = 0;
+    }
+  }
+  if (targetPage < 0) targetPage = 0;
+  try { await ctx.answerCbQuery().catch(() => {}); } catch (_e) { /* ignore */ }
+
+  const { getAllUsersWithProfile, getUsersPaginated } = require('../../utils/userAnalytics');
+  const { User } = require('../../models');
+  const limit = 10;
+  const offset = targetPage * limit;
+  let users = [];
+  try {
+    if (typeof getUsersPaginated === 'function') {
+      users = await getUsersPaginated(limit, offset);
+    } else {
+      users = await getAllUsersWithProfile(limit, offset);
+    }
+  } catch (_e) {
+    users = await getAllUsersWithProfile(limit, offset);
+  }
+
+  let total = 0;
+  try { total = await User.count(); } catch (_e) { total = users.length; }
+
+  if (users.length === 0 && targetPage === 0) {
+    await ctx.reply('📊 Пользователей пока нет.', backKeyboard);
+    return;
+  }
+  if (users.length === 0 && targetPage > 0) {
+    await ctx.reply('📊 Больше пользователей нет.', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '◀️ Назад', callback_data: `users_page:${targetPage - 1}` }],
+          [{ text: '🔙 Назад', callback_data: 'schedule_back' }],
+        ],
+      },
+    });
+    return;
+  }
+
+  const hasNext = (offset + users.length) < total;
+  const hasPrev = targetPage > 0;
+
+  let text = `📊 Пользователи (стр. ${targetPage + 1}, всего ${total}):\n\n`;
+  for (const u of users) {
+    const p = u.profile || null;
+    const classId = p ? p.classId : (u.classId || '—');
+    const trackId = p ? (p.trackId || '—') : (u.trackId || '—');
+    const subgroupId = p ? (p.subgroupId || '—') : (u.subgroupId || '—');
+    const audience = `${classId}/${trackId}/${subgroupId}`;
+    const uname = u.username ? `@${u.username} ` : '';
+    const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || '—';
+    const lastSeen = u.lastSeenAt ? formatMoscowDateTime(u.lastSeenAt) : '—';
+    text += `${u.userId} ${uname}${name} (${audience}) ${lastSeen}\n`;
+  }
+
+  const keyboard = [];
+  for (const u of users) {
+    const label = `${u.userId} ${u.username ? '@' + u.username : (u.firstName || '')}`.trim().slice(0, 32);
+    keyboard.push([{ text: label, callback_data: `user_detail:${u.userId}:${targetPage}` }]);
+  }
+  const navRow = [];
+  if (hasPrev) navRow.push({ text: '◀️ Назад', callback_data: `users_page:${targetPage - 1}` });
+  if (hasNext) navRow.push({ text: '▶️ Вперед', callback_data: `users_page:${targetPage + 1}` });
+  if (navRow.length) keyboard.push(navRow);
+  keyboard.push([{ text: '🔙 Назад', callback_data: 'schedule_back' }]);
+
+  await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });
+}
+
+/**
+ * Детальный просмотр пользователя по ID.
+ * Ожидает callback_data формата `user_detail:<userId>:<page>`
+ * @param {import('telegraf').Context} ctx
+ */
+async function handleUserDetail(ctx) {
+  const { isAdmin } = require('../../middleware/isAdmin');
+  if (!isAdmin(ctx)) {
+    try { await ctx.answerCbQuery('❌ У вас нет прав администратора'); } catch (_e) { /* ignore */ }
+    return;
+  }
+  try { await ctx.answerCbQuery().catch(() => {}); } catch (_e) { /* ignore */ }
+
+  let userId = null;
+  let page = 0;
+  if (ctx.callbackQuery && ctx.callbackQuery.data) {
+    const data = ctx.callbackQuery.data;
+    if (data.startsWith('user_detail:')) {
+      const parts = data.split(':');
+      userId = parts[1];
+      if (parts[2] != null) {
+        const p = parseInt(parts[2], 10);
+        if (!isNaN(p)) page = p;
+      }
+    }
+  }
+  // fallback: if ctx.match или напрямую передан
+  if (!userId && ctx.match && ctx.match[1]) userId = ctx.match[1];
+
+  if (!userId) {
+    await ctx.reply('❌ Не указан ID пользователя.', backKeyboard);
+    return;
+  }
+
+  const { getUserDetail } = require('../../utils/userAnalytics');
+  let detail;
+  try {
+    detail = await getUserDetail(userId);
+  } catch (e) {
+    console.error('handleUserDetail getUserDetail error', e);
+    await ctx.reply('❌ Ошибка загрузки пользователя.', backKeyboard);
+    return;
+  }
+  if (!detail || !detail.user) {
+    await ctx.reply(`❌ Пользователь ${userId} не найден.`, {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 К списку', callback_data: `users_page:${page}` }], [{ text: '🔙 Назад', callback_data: 'schedule_back' }]] },
+    });
+    return;
+  }
+  const { user, profile, events } = detail;
+  const p = profile || user.profile || null;
+  const classId = p ? p.classId : (user.classId || '—');
+  const trackId = p ? (p.trackId || '—') : (user.trackId || '—');
+  let teacherLabel = '—';
+  const subgroupId = p ? p.subgroupId : user.subgroupId;
+  if (subgroupId) {
+    try {
+      const { Subgroup } = require('../../models');
+      const sg = await Subgroup.findByPk(subgroupId);
+      teacherLabel = sg ? (sg.teacherName || sg.id) : subgroupId;
+    } catch (_e) {
+      teacherLabel = subgroupId;
+    }
+  }
+  const usernameLine = user.username ? `@${user.username}` : '—';
+  const nameLine = [user.firstName, user.lastName].filter(Boolean).join(' ') || '—';
+  const firstSeen = user.firstSeenAt ? formatMoscowDate(user.firstSeenAt) : '—';
+  const lastSeen = user.lastSeenAt ? formatMoscowDateTime(user.lastSeenAt) : '—';
+  const actionsCount = user.interactionCount != null ? user.interactionCount : (events ? events.length : 0);
+
+  let text = `👤 ID: ${user.userId}\n${usernameLine}\nИмя: ${nameLine}\nКласс: ${classId}\nПрофиль: ${trackId}\nУчитель: ${teacherLabel}\nПервый вход: ${firstSeen}\nПоследний: ${lastSeen}\nДействий: ${actionsCount}`;
+
+  if (events && events.length) {
+    text += '\n\nПоследние 10 действий:\n';
+    for (const ev of events) {
+      const t = formatEventTime(ev.createdAt);
+      const payload = ev.payload ? String(ev.payload).slice(0, 40) : '';
+      const metaStr = payload ? `: ${payload}` : '';
+      text += `- ${t} ${ev.type}${metaStr}\n`;
+    }
+  } else {
+    text += '\n\nПоследние 10 действий:\n— нет действий —';
+  }
+
+  const keyboard = [
+    [{ text: '🔙 К списку', callback_data: `users_page:${page}` }],
+    [{ text: '🔙 Назад', callback_data: 'schedule_back' }],
+  ];
+
+  await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });
+}
+
+async function handleShowModes(ctx) {
+  try {
+    const { getHomeworkVisibility, getHomeworkVisibilityLabel } = require('../../utils/settings');
+    const mode = await getHomeworkVisibility();
+    const label = getHomeworkVisibilityLabel(mode);
+    await ctx.reply(`🧩 Режимы\n\n👥 Режим домашнего задания: ${label}\n\nНажмите чтобы переключить:`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `👥 Переключить: ${label}`, callback_data: 'toggle_hw_visibility' }],
+          [{ text: '🔙 Назад', callback_data: 'admin_back' }],
+        ],
+      },
+    });
+  } catch (e) {
+    console.error('handleShowModes error', e);
+    await ctx.reply('❌ Ошибка загрузки режимов.', backKeyboard);
+  }
+}
+
+async function handleLessonsMenu(ctx) {
+  await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard);
+}
+
+async function handleToggleHomeworkVisibility(ctx) {
+  try {
+    const { toggleHomeworkVisibility } = require('../../utils/settings');
+    await toggleHomeworkVisibility();
+    await handleShowModes(ctx);
+  } catch (e) {
+    console.error('handleToggleHomeworkVisibility error', e);
+    await ctx.reply('❌ Ошибка переключения режима.', backKeyboard);
+  }
+}
+
 module.exports = {
   handleEditSelect,
   handleAdd,
@@ -824,6 +1108,11 @@ module.exports = {
   handleSubgroupAdd,
   handleSubgroupDelete,
   handleStats,
+  handleUsersList,
+  handleUserDetail,
+  handleShowModes,
+  handleLessonsMenu,
+  handleToggleHomeworkVisibility,
   parseBellInput,
   ROOM_PROMPT,
   promptAudienceClass,

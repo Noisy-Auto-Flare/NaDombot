@@ -2,7 +2,13 @@ const { Scenes } = require('telegraf');
 const scheduleService = require('../services/scheduleService');
 const { groupByDay, formatWeeklySchedule, formatScheduleForEdit } = require('../utils/scheduleFormatter');
 const { isAdmin } = require('../middleware/isAdmin');
-const { cancelKeyboard, backKeyboard, backToMenuKeyboard, manageScheduleKeyboard } = require('../utils/keyboards');
+const {
+  cancelKeyboard,
+  backKeyboard,
+  backToMenuKeyboard,
+  adminMainKeyboard,
+  lessonsManageKeyboard,
+} = require('../utils/keyboards');
 const { getQuickPickThreshold } = require('../utils/quickPickSettings');
 const {
   handleEditSelect,
@@ -31,6 +37,11 @@ const {
   handleSubgroupAdd,
   handleSubgroupDelete,
   handleStats,
+  handleUsersList,
+  handleUserDetail,
+  handleShowModes,
+  handleLessonsMenu,
+  handleToggleHomeworkVisibility,
 } = require('./helpers/manageScheduleHelpers');
 
 const manageScheduleScene = new Scenes.WizardScene(
@@ -44,7 +55,7 @@ const manageScheduleScene = new Scenes.WizardScene(
       await ctx.reply('❌ У вас нет прав администратора');
       return ctx.scene.leave();
     }
-    await ctx.reply('📅 Управление расписанием\n\nВыберите действие:', manageScheduleKeyboard);
+    await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard);
     return ctx.wizard.next();
   },
   async (ctx) => {
@@ -53,6 +64,43 @@ const manageScheduleScene = new Scenes.WizardScene(
     const action = ctx.callbackQuery.data;
 
     if (action === 'back_to_menu') return ctx.scene.leave();
+
+    // --- Admin main menu navigation ---
+    if (action === 'admin_manage') {
+      await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard);
+      return;
+    }
+
+    if (action === 'admin_back') {
+      await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard);
+      return;
+    }
+
+    if (action === 'lessons_manage') {
+      await handleLessonsMenu(ctx);
+      return;
+    }
+
+    if (action === 'lessons_back') {
+      await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard);
+      return;
+    }
+
+    if (action === 'modes') {
+      await handleShowModes(ctx);
+      return;
+    }
+
+    if (action === 'toggle_hw_visibility') {
+      await handleToggleHomeworkVisibility(ctx);
+      return;
+    }
+
+    // Legacy alias: schedule_toggle_multiprofile (now handled via modes)
+    if (action === 'schedule_toggle_multiprofile') {
+      await handleShowModes(ctx);
+      return;
+    }
 
     if (action === 'schedule_add') {
       await ctx.reply(
@@ -161,18 +209,27 @@ const manageScheduleScene = new Scenes.WizardScene(
       return;
     }
 
-    if (action === 'schedule_toggle_multiprofile') {
-      if (!isAdmin(ctx)) {
-        await ctx.reply('❌ У вас нет прав администратора');
-        return;
-      }
-      ctx.wizard.state.action = 'toggle_multiprofile';
-      await handleToggleMultiprofile(ctx);
+    if (action === 'users_list' || action === 'schedule_users') {
+      await handleUsersList(ctx, 0);
+      return;
+    }
+
+    if (action.startsWith('users_page:')) {
+      const p = parseInt(action.split(':')[1], 10);
+      await handleUsersList(ctx, isNaN(p) ? 0 : p);
+      return;
+    }
+
+    if (action.startsWith('user_detail:')) {
+      await handleUserDetail(ctx);
       return;
     }
 
     if (action === 'schedule_back') {
-      await ctx.reply('📅 Управление расписанием\n\nВыберите действие:', manageScheduleKeyboard);
+      // Return to lessons submenu if coming from lesson-related flow, otherwise admin
+      // Heuristic: if we were in lessons context, show lessons menu; fallback admin
+      await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard);
+      return;
     }
   },
   async (ctx) => {
@@ -183,6 +240,28 @@ const manageScheduleScene = new Scenes.WizardScene(
       if (a === 'back_to_menu' || a === 'schedule_cancel') {
         await ctx.reply('❌ Действие отменено.', backToMenuKeyboard);
         return ctx.scene.leave();
+      }
+      if (a === 'admin_back') {
+        await ctx.reply('⚙️ Управление\n\nВыберите действие:', adminMainKeyboard);
+        return ctx.wizard.back();
+      }
+      if (a === 'lessons_back' || a === 'schedule_back') {
+        await ctx.reply('📚 Управление уроками\n\nВыберите действие:', lessonsManageKeyboard);
+        return ctx.wizard.back();
+      }
+      // Users pagination / detail from any wizard step
+      if (a === 'users_list' || a === 'schedule_users') {
+        await handleUsersList(ctx, 0);
+        return;
+      }
+      if (a.startsWith('users_page:')) {
+        const p = parseInt(a.split(':')[1], 10);
+        await handleUsersList(ctx, isNaN(p) ? 0 : p);
+        return;
+      }
+      if (a.startsWith('user_detail:')) {
+        await handleUserDetail(ctx);
+        return;
       }
       const action = ctx.wizard.state.action;
       // Audience callbacks
@@ -238,10 +317,6 @@ const manageScheduleScene = new Scenes.WizardScene(
         ctx.message.text = id;
         return handleClassDelete(ctx);
       }
-      // If text is single token that looks like existing class ID and user might want delete,
-      // try add first; if SLOT_TAKEN and next word is delete hint, but we can't disambiguate.
-      // Default to add; for delete user can use explicit "delete <id>"
-      // Also support "🗑 <id>" style
       if (text.startsWith('🗑')) {
         ctx.message.text = text.replace('🗑', '').trim();
         return handleClassDelete(ctx);

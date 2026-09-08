@@ -65,8 +65,7 @@ async function handleStart(ctx) {
     } catch (_e) { void _e; }
   }
   if (admin) {
-    keyboard.push([{ text: '⚙️ Управление расписанием', callback_data: 'manage_schedule' }]);
-    keyboard.push([{ text: '👥 Режим домашнего задания', callback_data: 'toggle_hw_visibility' }]);
+    keyboard.push([{ text: '⚙️ Управление', callback_data: 'admin_manage' }]);
   }
   const greeting =
     `👋 Привет, ${ctx.from.first_name}!\n` +
@@ -310,7 +309,7 @@ async function handleHomeworkWeek(ctx) {
   }
 }
 
-async function handleManageSchedule(ctx) {
+async function handleAdminManage(ctx) {
   if (!isAdmin(ctx)) {
     await ctx.answerCbQuery('❌ У вас нет прав администратора');
     return;
@@ -318,6 +317,9 @@ async function handleManageSchedule(ctx) {
   await ctx.answerCbQuery();
   await ctx.scene.enter('manageSchedule');
 }
+
+// @deprecated alias — оставлен для совместимости
+const handleManageSchedule = handleAdminManage;
 
 async function handleToggleHomeworkVisibility(ctx) {
   if (!isAdmin(ctx)) {
@@ -391,6 +393,7 @@ module.exports = {
   handleHomeworkTomorrow,
   handleHomeworkWeek,
   handleManageSchedule,
+  handleAdminManage,
   handleBackToMenu,
   handleToggleHomeworkVisibility,
   handleCurrentLesson,
