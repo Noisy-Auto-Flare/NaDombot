@@ -32,11 +32,13 @@ async function lazyOnboarding(ctx, next) {
     const profile = await getUserProfile(ctx.from.id);
     if (profile) return next();
 
-    // нет профиля → онбординг
+    // нет профиля → онбординг (ctx.scene доступен только после stage.middleware)
+    if (!ctx.scene || !ctx.scene.enter) return next();
     try {
       await ctx.scene.enter('selectProfile');
     } catch (e) {
       console.error('lazyOnboarding enter', e.message || e);
+      return next();
     }
     return; // прерываем next()
   } catch (e) {

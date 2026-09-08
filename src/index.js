@@ -28,12 +28,12 @@ const {
   handleSelectProfile
 } = require('./handlers/commands');
 
-// Lazy onboarding после telemetry
-bot.use(lazyOnboarding);
-
 // Регистрация сцен
 const stage = new Scenes.Stage([addHomeworkScene, addHomeworkOnDateScene, manageScheduleScene, selectProfileScene]);
 bot.use(stage.middleware());
+
+// Lazy onboarding после stage (иначе ctx.scene undefined)
+bot.use(lazyOnboarding);
 
 // Регистрация команд
 bot.command('start', handleStart);
