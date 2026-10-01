@@ -4,6 +4,9 @@ const { Track, Subgroup } = require('../models');
 
 const CANCEL_MSG = '❌ Выбор отменен, вы сможете выбрать позже через /profile';
 
+const SCOPE_OWN = 'select_scope:own';
+const SCOPE_ALL = 'select_scope:all';
+
 function buildClassKeyboard(classes) {
   const kb = [];
   for (const c of classes) {
@@ -19,6 +22,7 @@ function buildTrackKeyboard(tracks) {
     kb.push([{ text: t.name, callback_data: `select_track:${t.id}` }]);
   }
   kb.push([{ text: 'Общий', callback_data: 'select_track:null' }]);
+  kb.push([{ text: '👀 Видеть всё', callback_data: SCOPE_ALL }]);
   kb.push([{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]);
   return kb;
 }
@@ -29,8 +33,54 @@ function buildSubgroupKeyboard(subgroups) {
     kb.push([{ text: s.teacher || s.name || s.id, callback_data: `select_subgroup:${s.id}` }]);
   }
   kb.push([{ text: 'Без группы/Все', callback_data: 'select_subgroup:null' }]);
+  kb.push([{ text: '👀 Видеть всё', callback_data: SCOPE_ALL }]);
   kb.push([{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]);
   return kb;
+}
+
+function buildScopeForkKeyboard() {
+  return [
+    [{ text: '📚 Только своё → дальше', callback_data: SCOPE_OWN }],
+    [{ text: '👀 Видеть всё', callback_data: SCOPE_ALL }],
+    [{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]
+  ];
+}
+
+async function showScopeFork(ctx) {
+  await ctx.reply('👥 Что показывать?\n\n📚 «Только своё» — уроки твоего профиля\n👀 «Видеть всё» — весь класс сразу (режим наблюдателя)', {
+    reply_markup: { inline_keyboard: buildScopeForkKeyboard() }
+  });
+}
+
+/**
+ * Сохранить scope='all': класс остаётся, остальные поля — null (P2 §3.1).
+ * @param {object} ctx
+ * @returns {Promise<void>}
+ */
+async function saveScopeAll(ctx) {
+  const editMode = ctx.wizard.state.editMode || ctx.scene.state.edit;
+  const original = ctx.wizard.state.originalProfile;
+  const classId = ctx.wizard.state.classId || (original && original.classId);
+  if (!classId) {
+    await ctx.reply('❌ Нет выбранного класса. Начните заново через /profile');
+    return ctx.scene.leave();
+  }
+  try {
+    await setUserProfile(ctx.from.id, { classId, trackId: null, subgroupId: null, scope: 'all' });
+  } catch (e) {
+    console.error('saveScopeAll', e.message || e);
+    await ctx.reply('❌ Не удалось сохранить режим. Попробуйте позже через /profile');
+    return ctx.scene.leave();
+  }
+  const prefix = editMode ? '✅ Режим обновлён' : '✅ Профиль сохранён';
+  await ctx.reply(`${prefix}: ${classId} · Видеть всё\nТеперь покажу меню`);
+  try {
+    const { handleStart } = require('../handlers/commands');
+    await handleStart(ctx);
+  } catch (_e) {
+    // fallback simple
+  }
+  return ctx.scene.leave();
 }
 
 async function finalizeProfile(ctx, subgroupId) {
@@ -62,8 +112,12 @@ async function finalizeProfile(ctx, subgroupId) {
       // will be filled during flow
     }
   }
+  // scope: явный выбор из развилки → он; в edit-выборе конкретного поля → 'own';
+  // иначе сохранить исходный (setUserProfile сам сохранит существующий).
+  const scopeChoice = ctx.wizard.state.scopeChoice;
+  const saveScope = scopeChoice || (editMode === 'track' || editMode === 'subgroup' ? 'own' : undefined);
   try {
-    await setUserProfile(ctx.from.id, { classId: saveClassId, trackId: saveTrackId, subgroupId: saveSubgroupId });
+    await setUserProfile(ctx.from.id, { classId: saveClassId, trackId: saveTrackId, subgroupId: saveSubgroupId, scope: saveScope });
   } catch (e) {
     console.error('finalizeProfile', e.message || e);
     await ctx.reply('❌ Не удалось сохранить профиль. Попробуйте позже через /profile');
@@ -101,9 +155,53 @@ async function finalizeProfile(ctx, subgroupId) {
   return ctx.scene.leave();
 }
 
+/**
+ * После выбора «Только своё»: показать треки (или сразу подгруппы, если треков нет).
+ * Переход — явным selectStep(3), т.к. вызываем из разных шагов (1/2).
+ * @param {object} ctx
+ */
+async function showOwnNextStep(ctx) {
+  ctx.wizard.state.scopeChoice = 'own';
+  const goTrackStep = () => {
+    if (typeof ctx.wizard.selectStep === 'function') ctx.wizard.selectStep(3);
+    else ctx.wizard.cursor = 3;
+  };
+  const classId = ctx.wizard.state.classId;
+  try {
+    const grade = parseInt(String(classId), 10);
+    const g = Number.isNaN(grade) ? 0 : grade;
+    const tracks = await getAvailableTracks(classId);
+    if (g < 10 || !tracks || tracks.length === 0) {
+      ctx.wizard.state.trackId = null;
+      const subgroups = await getAvailableSubgroups('английский', classId);
+      const kb = buildSubgroupKeyboard(subgroups);
+      await ctx.reply('У кого английский?', { reply_markup: { inline_keyboard: kb } });
+      goTrackStep();
+      return;
+    }
+    const kb = buildTrackKeyboard(tracks);
+    await ctx.reply('Выберите профиль', { reply_markup: { inline_keyboard: kb } });
+    goTrackStep();
+  } catch (e) {
+    console.error('showOwnNextStep error', e.message || e);
+    await ctx.reply('❌ Ошибка при загрузке профилей. Попробуйте позже.');
+    return ctx.scene.leave();
+  }
+}
+
+/**
+ * Показать развилку scope и перейти на шаг 2 (вызываем из шагов 0/1).
+ * @param {object} ctx
+ */
+async function showForkAndGo(ctx) {
+  await showScopeFork(ctx);
+  if (typeof ctx.wizard.selectStep === 'function') ctx.wizard.selectStep(2);
+  else ctx.wizard.cursor = 2;
+}
+
 const selectProfileScene = new Scenes.WizardScene(
   'selectProfile',
-  // Step 0 — показать классы или обработку edit режима
+  // Step 0 — entry: edit-диспетч или классы (с автоскипом единственного класса → развилка)
   async (ctx) => {
     if (ctx.callbackQuery && ctx.callbackQuery.data === 'back_to_menu') {
       await ctx.answerCbQuery().catch(() => {});
@@ -117,7 +215,7 @@ const selectProfileScene = new Scenes.WizardScene(
       try {
         const prof = await getUserProfile(ctx.from.id);
         if (prof) {
-          ctx.wizard.state.originalProfile = { classId: prof.classId, trackId: prof.trackId, subgroupId: prof.subgroupId };
+          ctx.wizard.state.originalProfile = { classId: prof.classId, trackId: prof.trackId, subgroupId: prof.subgroupId, scope: prof.scope };
           ctx.wizard.state.classId = prof.classId;
           ctx.wizard.state.trackId = prof.trackId;
           ctx.wizard.state.subgroupId = prof.subgroupId;
@@ -150,6 +248,12 @@ const selectProfileScene = new Scenes.WizardScene(
               await ctx.reply('❌ Нет доступных классов. Обратитесь к администратору.');
               return ctx.scene.leave();
             }
+            if (classes.length === 1) {
+              ctx.wizard.state.classId = classes[0].id;
+              ctx.wizard.state.editMode = null;
+              await showForkAndGo(ctx);
+              return;
+            }
             const kb = buildClassKeyboard(classes);
             await ctx.reply('👋 Выберите класс', { reply_markup: { inline_keyboard: kb } });
             ctx.wizard.state.editMode = null;
@@ -170,7 +274,7 @@ const selectProfileScene = new Scenes.WizardScene(
           ctx.wizard.state.trackId = null;
           // if track not applicable, finish directly keeping other fields
           try {
-            await setUserProfile(ctx.from.id, { classId: prof.classId, trackId: null, subgroupId: prof.subgroupId });
+            await setUserProfile(ctx.from.id, { classId: prof.classId, trackId: null, subgroupId: prof.subgroupId, scope: 'own' });
             await ctx.reply('✅ Профиль обновлен: ' + prof.classId + ' Общий ' + (prof.subgroupId || 'Без группы'));
             try {
               const { handleStart } = require('../handlers/commands');
@@ -185,14 +289,11 @@ const selectProfileScene = new Scenes.WizardScene(
         }
         const kb = buildTrackKeyboard(tracks);
         await ctx.reply('🧬 Выберите профиль', { reply_markup: { inline_keyboard: kb } });
-        // jump to track handling step (which is step 2 index 2)
-        // set next step to handle track selection: step 2 handles select_track
-        // we are at step 0, need to go to step 2. Wizard next goes to 1, so set state and use selectStep if available
+        // jump to track handling step (index 3)
         if (typeof ctx.wizard.selectStep === 'function') {
-          ctx.wizard.selectStep(2);
+          ctx.wizard.selectStep(3);
         } else {
-          // fallback: set cursor manually to step 2 (wizard state)
-          ctx.wizard.cursor = 2;
+          ctx.wizard.cursor = 3;
         }
         return;
       }
@@ -204,6 +305,12 @@ const selectProfileScene = new Scenes.WizardScene(
             if (!classes || classes.length === 0) {
               await ctx.reply('❌ Нет доступных классов. Обратитесь к администратору.');
               return ctx.scene.leave();
+            }
+            if (classes.length === 1) {
+              ctx.wizard.state.classId = classes[0].id;
+              ctx.wizard.state.editMode = null;
+              await showForkAndGo(ctx);
+              return;
             }
             const kb = buildClassKeyboard(classes);
             await ctx.reply('👋 Выберите класс', { reply_markup: { inline_keyboard: kb } });
@@ -219,12 +326,11 @@ const selectProfileScene = new Scenes.WizardScene(
           const subgroups = await getAvailableSubgroups('английский', prof.classId);
           const kb = buildSubgroupKeyboard(subgroups);
           await ctx.reply('👩‍🏫 У кого английский?', { reply_markup: { inline_keyboard: kb } });
-          // jump to final step handling subgroup (step 3 index 3, but step2 also handles subgroup when track skipped)
-          // place to step 2 which handles both track and subgroup
+          // jump to track/subgroup handling step (index 3, handles both)
           if (typeof ctx.wizard.selectStep === 'function') {
-            ctx.wizard.selectStep(2);
+            ctx.wizard.selectStep(3);
           } else {
-            ctx.wizard.cursor = 2;
+            ctx.wizard.cursor = 3;
           }
           return;
         } catch (e) {
@@ -234,12 +340,17 @@ const selectProfileScene = new Scenes.WizardScene(
         }
       }
     }
-    // normal flow — показать классы
+    // normal flow — класс: один доступный → молча подставляем и сразу развилка (A1)
     try {
       const classes = await getAvailableClasses();
       if (!classes || classes.length === 0) {
         await ctx.reply('❌ Нет доступных классов. Обратитесь к администратору.');
         return ctx.scene.leave();
+      }
+      if (classes.length === 1) {
+        ctx.wizard.state.classId = classes[0].id;
+        await showForkAndGo(ctx);
+        return;
       }
       const kb = buildClassKeyboard(classes);
       await ctx.reply('👋 Выберите класс', { reply_markup: { inline_keyboard: kb } });
@@ -250,7 +361,7 @@ const selectProfileScene = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
   },
-  // Step 1 — обработка выбора класса (и для edit class)
+  // Step 1 — выбор класса → развилка scope (P2 §3.1)
   async (ctx) => {
     if (ctx.callbackQuery) {
       const data = ctx.callbackQuery.data;
@@ -263,35 +374,24 @@ const selectProfileScene = new Scenes.WizardScene(
         await ctx.answerCbQuery().catch(() => {});
         const classId = data.split(':').slice(1).join(':');
         ctx.wizard.state.classId = classId;
-        // if editMode class, continue to track/subgroup as full flow (new class resets track/subgroup)
-        try {
-          const grade = parseInt(String(classId), 10);
-          const g = Number.isNaN(grade) ? 0 : grade;
-          const tracks = await getAvailableTracks(classId);
-          if (g < 10 || !tracks || tracks.length === 0) {
-            ctx.wizard.state.trackId = null;
-            // сразу к подгруппам
-            const subgroups = await getAvailableSubgroups('английский', classId);
-            const kb = buildSubgroupKeyboard(subgroups);
-            await ctx.reply('У кого английский?', { reply_markup: { inline_keyboard: kb } });
-            return ctx.wizard.next();
-          }
-          // показать треки
-          const kb = buildTrackKeyboard(tracks);
-          await ctx.reply('Выберите профиль', { reply_markup: { inline_keyboard: kb } });
-          return ctx.wizard.next();
-        } catch (e) {
-          console.error('select_class error', e.message || e);
-          await ctx.reply('❌ Ошибка при загрузке профилей. Попробуйте позже.');
-          return ctx.scene.leave();
-        }
+        await showForkAndGo(ctx);
+        return;
+      }
+      // развилка могла быть показана уже на step 0 (автоскип класса) — обработать здесь же
+      if (data === SCOPE_OWN) {
+        await ctx.answerCbQuery().catch(() => {});
+        return showOwnNextStep(ctx);
+      }
+      if (data === SCOPE_ALL) {
+        await ctx.answerCbQuery().catch(() => {});
+        return saveScopeAll(ctx);
       }
       await ctx.answerCbQuery().catch(() => {});
       return;
     }
     // текстовые сообщения игнорируем
   },
-  // Step 2 — обработка выбора трека ИЛИ подгруппы (если трек скипнут) + также подгруппы для edit subgroup/track
+  // Step 2 — развилка scope после явного выбора класса
   async (ctx) => {
     if (ctx.callbackQuery) {
       const data = ctx.callbackQuery.data;
@@ -299,6 +399,31 @@ const selectProfileScene = new Scenes.WizardScene(
         await ctx.answerCbQuery().catch(() => {});
         await ctx.reply(CANCEL_MSG);
         return ctx.scene.leave();
+      }
+      if (data === SCOPE_OWN) {
+        await ctx.answerCbQuery().catch(() => {});
+        return showOwnNextStep(ctx);
+      }
+      if (data === SCOPE_ALL) {
+        await ctx.answerCbQuery().catch(() => {});
+        return saveScopeAll(ctx);
+      }
+      await ctx.answerCbQuery().catch(() => {});
+      return;
+    }
+  },
+  // Step 3 — обработка выбора трека ИЛИ подгруппы (если трек скипнут) + третья кнопка scope
+  async (ctx) => {
+    if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+      if (data === 'schedule_cancel' || data === 'back_to_menu') {
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.reply(CANCEL_MSG);
+        return ctx.scene.leave();
+      }
+      if (data === SCOPE_ALL) {
+        await ctx.answerCbQuery().catch(() => {});
+        return saveScopeAll(ctx);
       }
       if (data.startsWith('select_track:')) {
         await ctx.answerCbQuery().catch(() => {});
@@ -312,7 +437,7 @@ const selectProfileScene = new Scenes.WizardScene(
           const finalClassId = original ? original.classId : ctx.wizard.state.classId;
           const finalSubgroupId = original ? original.subgroupId : null;
           try {
-            await setUserProfile(ctx.from.id, { classId: finalClassId, trackId: finalTrackId, subgroupId: finalSubgroupId });
+            await setUserProfile(ctx.from.id, { classId: finalClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: 'own' });
             let trackLabel = finalTrackId || 'Общий';
             if (finalTrackId) {
               try {
@@ -363,7 +488,7 @@ const selectProfileScene = new Scenes.WizardScene(
             // directly save
             const finalSubgroupId = subgroupId === 'null' ? null : subgroupId;
             try {
-              await setUserProfile(ctx.from.id, { classId: original.classId, trackId: original.trackId, subgroupId: finalSubgroupId });
+              await setUserProfile(ctx.from.id, { classId: original.classId, trackId: original.trackId, subgroupId: finalSubgroupId, scope: 'own' });
               let trackLabel = original.trackId || 'Общий';
               if (original.trackId) {
                 try {
@@ -397,7 +522,7 @@ const selectProfileScene = new Scenes.WizardScene(
       return;
     }
   },
-  // Step 3 — обработка выбора подгруппы (после трека)
+  // Step 4 — обработка выбора подгруппы (после трека) + третья кнопка scope
   async (ctx) => {
     if (ctx.callbackQuery) {
       const data = ctx.callbackQuery.data;
@@ -405,6 +530,10 @@ const selectProfileScene = new Scenes.WizardScene(
         await ctx.answerCbQuery().catch(() => {});
         await ctx.reply(CANCEL_MSG);
         return ctx.scene.leave();
+      }
+      if (data === SCOPE_ALL) {
+        await ctx.answerCbQuery().catch(() => {});
+        return saveScopeAll(ctx);
       }
       if (data.startsWith('select_subgroup:')) {
         await ctx.answerCbQuery().catch(() => {});

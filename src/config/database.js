@@ -42,7 +42,7 @@ async function testConnection() {
   }
 }
 
-const SCHEMA_VERSION = 'p1-subgroup-v2';
+const SCHEMA_VERSION = 'p2-merge';
 // Явный список колонок schedules для D2 (id сохраняем обязательно — иначе битые homeworks.scheduleId)
 const CANONICAL_SCHEDULE_COLS = [
   'id',
@@ -303,6 +303,34 @@ async function repairSchedulesD2() {
 }
 
 /**
+ * P2 — колонка UserProfile.scope (идемпотентно, без DROP).
+ * Вызывать ДО sequelize.sync(): иначе sync попытается создать таблицу/индекс
+ * с колонкой, которой нет в legacy-БД. Backfill существующих → 'own'.
+ */
+async function ensureUserProfileScopeColumn() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('user_profiles').catch(() => null);
+    if (!desc) return;
+    if (!desc.scope) {
+      await qi.addColumn('user_profiles', 'scope', {
+        type: Sequelize.DataTypes.STRING(10),
+        allowNull: false,
+        defaultValue: 'own'
+      });
+      console.log('✅ Prelim миграция: добавлен user_profiles.scope');
+    }
+    try {
+      await sequelize.query("UPDATE user_profiles SET scope='own' WHERE scope IS NULL OR scope=''");
+    } catch (_bf) {
+      void _bf;
+    }
+  } catch (preErr) {
+    console.warn('⚠️ Prelim P2 миграция user_profiles.scope:', preErr.message || preErr);
+  }
+}
+
+/**
  * P1 item 1 — колонки subgroups v2 (идемпотентно, без DROP).
  * Вызывать ДО sequelize.sync(): иначе sync упадёт на индексе subgroups_division,
  * когда колонки division ещё нет (legacy-БД со схемой teacherName).
@@ -521,6 +549,12 @@ async function syncDatabase() {
     } catch (_sgPre) {
       void _sgPre;
     }
+    // P2: колонка user_profiles.scope ДО sync + backfill 'own'
+    try {
+      await ensureUserProfileScopeColumn();
+    } catch (_scopePre) {
+      void _scopePre;
+    }
     // Безопасный sync без alter — создаёт отсутствующие таблицы, не ломает существующие (SQLite alter в Sequelize 6 криво пересоздаёт UNIQUE).
     // Новые колонки/индексы V6 добавляем вручную ниже (совместимо с sync({alter:true}) по результату, но без бага).
     await sequelize.sync();
@@ -652,6 +686,12 @@ async function syncDatabase() {
       } catch (_sgPreFb) {
         void _sgPreFb;
       }
+      // P2: колонка user_profiles.scope до per-model sync + backfill
+      try {
+        await ensureUserProfileScopeColumn();
+      } catch (_scopePreFb) {
+        void _scopePreFb;
+      }
       // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
       await Setting.sync();
       await Schedule.sync();
@@ -702,5 +742,6 @@ module.exports = {
   // exposed for testing
   _dedupeByAudience: dedupeByAudience,
   _migrateSubgroupsV2: migrateSubgroupsV2,
-  _ensureSubgroupsV2Columns: ensureSubgroupsV2Columns
+  _ensureSubgroupsV2Columns: ensureSubgroupsV2Columns,
+  _ensureUserProfileScopeColumn: ensureUserProfileScopeColumn
 };

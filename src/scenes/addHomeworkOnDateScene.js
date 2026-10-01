@@ -4,10 +4,20 @@ const scheduleService = require('../services/scheduleService');
 const { getMoscowNow, getMoscowDayOfWeek } = require('../utils/moscowTime');
 const { formatDate, getDayName } = require('../utils/dateUtils');
 const { getRecentLessonRows } = require('../utils/recentLessons');
+const { getTagContext } = require('../utils/scheduleUtils');
+const { buildAudienceTag } = require('../utils/audience');
+const {
+  fetchExistingHomework,
+  formatExistingHomeworkText,
+  existingHomeworkKeyboard,
+  replaceHomeworkConditional,
+  handleChoiceCallback
+} = require('../utils/homeworkWrite');
 
 /**
- * Опции аудитории для записи (D4): при отсутствии профиля — null (старое поведение,
- * findBySubjectNormalized без фильтра; при выключенном флаге фильтр тоже не применяется).
+ * Опции аудитории для записи (D4 + P2 scope): при отсутствии профиля — null
+ * (старое поведение, findBySubjectNormalized без фильтра; при выключенном флаге
+ * фильтр тоже не применяется). Scope пробрасываем для классового фильтра в all.
  * @param {object} ctx - Telegraf context
  * @returns {Promise<object|null>}
  */
@@ -16,7 +26,7 @@ async function resolveAudienceOpts(ctx) {
     const { getUserProfile } = require('../utils/userProfile');
     const p = await getUserProfile(ctx.from && ctx.from.id);
     if (!p || !p.classId) return null;
-    return { classId: p.classId, trackId: p.trackId || null, subgroupId: p.subgroupId || null };
+    return { classId: p.classId, trackId: p.trackId || null, subgroupId: p.subgroupId || null, scope: p.scope || 'own' };
   } catch (_e) {
     return null;
   }
@@ -34,12 +44,14 @@ function getShortDayName(dayOfWeek) {
 
 /**
  * Сгенерировать клавиатуру дат на 14 дней вперёд для предмета
- * Показывает только даты где есть урок (начиная с завтра), без серых кнопок
+ * Показывает только даты где есть урок (начиная с завтра), без серых кнопок.
+ * В scope all при >1 варианте на дату — кнопка уточнения (P2 disambiguation).
  * @param {Array} schedules - все Schedule по предмету (отфильтрованные по subjectsMatch)
  * @param {Date} baseDate - базовый Date (12:00) московской сегодняшней даты
+ * @param {boolean} [isAll=false] - scope all: даты с несколькими вариантами ведут на уточнение
  * @returns {Array<Array<{text:string,callback_data:string}>>|null} null если нет дат с уроком
  */
-function buildDateKeyboard(schedules, baseDate) {
+function buildDateKeyboard(schedules, baseDate, isAll = false) {
   const buttons = [];
 
   for (let i = 1; i <= 14; i++) {
@@ -56,10 +68,17 @@ function buildDateKeyboard(schedules, baseDate) {
     const isoDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const label = `${getShortDayName(dayOfWeek)} ${dd}.${mm}`;
 
-    buttons.push({
-      text: label,
-      callback_data: `hw_date:${isoDate}:${matching[0].id}`
-    });
+    if (isAll && matching.length > 1) {
+      buttons.push({
+        text: `${label} (?)`,
+        callback_data: `hw_variants:${isoDate}`
+      });
+    } else {
+      buttons.push({
+        text: label,
+        callback_data: `hw_date:${isoDate}:${matching[0].id}`
+      });
+    }
   }
 
   if (buttons.length === 0) return null;
@@ -74,10 +93,75 @@ function buildDateKeyboard(schedules, baseDate) {
 }
 
 /**
+ * Общая точка: schedule + date выбраны → проверка существующих (P2 §13.1).
+ * @param {object} ctx
+ * @param {object} schedule
+ * @param {Date} date
+ */
+async function proceedWithScheduleDate(ctx, schedule, date) {
+  ctx.wizard.state.scheduleId = schedule.id;
+  ctx.wizard.state.date = date;
+  ctx.wizard.state.selectedSchedule = schedule;
+
+  const dateStr = date.toISOString().split('T')[0];
+  let rows = [];
+  try {
+    rows = await fetchExistingHomework(schedule.id, dateStr);
+  } catch (e) {
+    console.error('fetchExistingHomework', e.message || e);
+    rows = [];
+  }
+  if (!rows || rows.length === 0) {
+    ctx.wizard.state.pendingMode = 'add';
+    const dayOfWeek = getMoscowDayOfWeek(date);
+    await ctx.reply(
+      `📝 Теперь введите текст домашнего задания для ${schedule.subjectName} на ${getDayName(dayOfWeek)}, ${formatDate(date)} (${schedule.lessonNumber} урок):`,
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]]
+        }
+      }
+    );
+    return ctx.wizard.next();
+  }
+  const last = rows[rows.length - 1];
+  ctx.wizard.state.pendingMode = null;
+  ctx.wizard.state.seenLastId = last.id;
+  ctx.wizard.state.seenUpdatedAt = last.updatedAt;
+  const text = await formatExistingHomeworkText({ subjectName: schedule.subjectName, date, rows });
+  await ctx.reply(text, { reply_markup: existingHomeworkKeyboard() });
+}
+
+/**
+ * Показать disambiguation вариантов на дату (P2: в all при >1 варианте — кнопки с scheduleId).
+ * @param {object} ctx
+ * @param {string} isoDate - YYYY-MM-DD
+ * @param {Array} matching - schedule-строки этого дня недели
+ */
+async function showDateVariantPicker(ctx, isoDate, matching) {
+  let tagCtx = null;
+  try {
+    tagCtx = await getTagContext();
+  } catch (_e) {
+    tagCtx = null;
+  }
+  const keyboard = matching.map((s) => {
+    const tag = buildAudienceTag(s, tagCtx || {}, tagCtx || {});
+    const label = `${tag || s.subjectName} · ${s.lessonNumber} ур.`;
+    return [{ text: label, callback_data: `hw_variant:${s.id}:${isoDate}` }];
+  });
+  keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
+  ctx.wizard.state.pendingVariants = matching.map((s) => s.id);
+  await ctx.reply(`📚 ${isoDate}: несколько вариантов — выбери:`, {
+    reply_markup: { inline_keyboard: keyboard }
+  });
+}
+
+/**
  * Сцена выбора даты для домашнего задания
  * Шаг 1: ввод предмета
- * Шаг 2: выбор даты из 14 дней (только дни с уроком кликабельны)
- * Шаг 3: ввод текста домашки
+ * Шаг 2: выбор даты из 14 дней (в all — уточнение варианта) + показ существующих
+ * Шаг 3: ввод текста домашки (добавление / условная замена)
  */
 const addHomeworkOnDateScene = new Scenes.WizardScene(
   'addHomeworkOnDate',
@@ -113,9 +197,11 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     return ctx.wizard.next();
   },
   async (ctx) => {
-    // Обработка callback_query (выбор даты / отмена)
+    // Обработка callback_query (выбор даты / варианта / отмена)
     if (ctx.callbackQuery) {
       const data = ctx.callbackQuery.data;
+
+      if (await handleChoiceCallback(ctx, data)) return;
 
       if (data === 'back_to_menu' || data === 'homework_cancel') {
         await ctx.answerCbQuery();
@@ -161,7 +247,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           const { isoDate } = getMoscowNow();
           const [y, m, d] = isoDate.split('-').map(Number);
           const baseDate = new Date(y, m - 1, d, 12, 0, 0, 0);
-          const keyboard = buildDateKeyboard(schedules, baseDate);
+          const isAll = await isWriteScopeAll(ctx);
+          const keyboard = buildDateKeyboard(schedules, baseDate, isAll);
           if (!keyboard) {
             await ctx.reply(`❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`, {
               reply_markup: {
@@ -195,6 +282,58 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         return;
       }
 
+      // Уточнение варианта на дату: hw_variants:YYYY-MM-DD
+      if (data.startsWith('hw_variants:')) {
+        await ctx.answerCbQuery().catch(() => {});
+        const isoDate = data.split(':')[1];
+        const subjectName = ctx.wizard.state.subjectName;
+        try {
+          const schedules = await scheduleService.findBySubjectNormalized(subjectName, await resolveAudienceOpts(ctx));
+          const date = new Date(isoDate);
+          const dayOfWeek = getMoscowDayOfWeek(date);
+          const matching = (schedules || [])
+            .filter((s) => s.dayOfWeek === dayOfWeek)
+            .sort((a, b) => a.lessonNumber - b.lessonNumber);
+          if (matching.length <= 1) {
+            await ctx.reply('❌ Варианты не найдены. Выберите дату заново.');
+            return;
+          }
+          await showDateVariantPicker(ctx, isoDate, matching);
+          return;
+        } catch (error) {
+          console.error('Ошибка при уточнении варианта:', error);
+          await ctx.reply('❌ Произошла ошибка. Попробуйте позже.');
+          return;
+        }
+      }
+
+      // Выбор варианта: hw_variant:<scheduleId>:<YYYY-MM-DD>
+      if (data.startsWith('hw_variant:')) {
+        const parts = data.split(':');
+        const scheduleId = Number(parts[1]);
+        const isoDate = parts[2];
+        await ctx.answerCbQuery().catch(() => {});
+        if (!(ctx.wizard.state.pendingVariants || []).includes(scheduleId)) {
+          await ctx.reply('❌ Вариант не найден. Попробуйте ещё раз.');
+          return;
+        }
+        try {
+          const schedule = await scheduleService.findById(scheduleId);
+          if (!schedule) {
+            await ctx.reply('❌ Урок не найден. Попробуйте ещё раз.');
+            return;
+          }
+          ctx.wizard.state.pendingVariants = null;
+          const date = new Date(isoDate);
+          await proceedWithScheduleDate(ctx, schedule, date);
+          return;
+        } catch (error) {
+          console.error('Ошибка при выборе варианта:', error);
+          await ctx.reply('❌ Произошла ошибка. Попробуйте позже.');
+          return;
+        }
+      }
+
       if (data.startsWith('hw_date:')) {
         // Формат hw_date:YYYY-MM-DD:scheduleId
         const parts = data.split(':');
@@ -216,9 +355,10 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           // D4 quick-путь: выбранный урок должен быть виден профилю (при флаге)
           try {
             const { isMultiprofileEnabled } = require('../utils/settings');
-            const { isVisible } = require('../utils/audience');
+            const { isVisibleWithScope } = require('../utils/audience');
             const audienceOpts = await resolveAudienceOpts(ctx);
-            if (audienceOpts && (await isMultiprofileEnabled()) && !isVisible(schedule, audienceOpts)) {
+            const enabled = await isMultiprofileEnabled();
+            if (audienceOpts && enabled && !isVisibleWithScope(schedule, audienceOpts, enabled)) {
               await ctx.answerCbQuery();
               await ctx.reply('❌ Урок не найден. Попробуйте ещё раз.', {
                 reply_markup: {
@@ -233,23 +373,12 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
           // Сохраняем выбор
           const date = new Date(isoDate);
-          ctx.wizard.state.scheduleId = schedule.id;
-          ctx.wizard.state.date = date;
-          ctx.wizard.state.selectedSchedule = schedule;
           // subjectName уже сохранён на этапе ввода предмета
 
           await ctx.answerCbQuery();
 
-          const dayOfWeek = getMoscowDayOfWeek(date);
-          await ctx.reply(
-            `📝 Теперь введите текст домашнего задания для ${schedule.subjectName} на ${getDayName(dayOfWeek)}, ${formatDate(date)} (${schedule.lessonNumber} урок):`,
-            {
-              reply_markup: {
-                inline_keyboard: [[{ text: '❌ Отменить', callback_data: 'homework_cancel' }]]
-              }
-            }
-          );
-          return ctx.wizard.next();
+          await proceedWithScheduleDate(ctx, schedule, date);
+          return;
         } catch (error) {
           console.error('Ошибка при выборе даты:', error);
           await ctx.answerCbQuery();
@@ -266,6 +395,14 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       return;
     }
 
+    // Показан список существующих — ждём кнопки, а не текст
+    if (ctx.wizard.state.seenLastId != null && ctx.wizard.state.pendingMode == null) {
+      if (ctx.message && ctx.message.text) {
+        await ctx.reply('Выбери действие кнопками: ➕ Добавить / 🔄 Заменить / ❌ Отмена');
+      }
+      return;
+    }
+
     // Проверяем текстовое сообщение — ввод названия предмета
     if (!ctx.message || !ctx.message.text) {
       return;
@@ -273,6 +410,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
     const subjectName = ctx.message.text.trim();
     ctx.wizard.state.subjectName = subjectName;
+    ctx.wizard.state.pendingVariants = null;
+    ctx.wizard.state.seenLastId = null;
 
     try {
       const schedules = await scheduleService.findBySubjectNormalized(subjectName, await resolveAudienceOpts(ctx));
@@ -296,7 +435,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       const [y, m, d] = isoDate.split('-').map(Number);
       const baseDate = new Date(y, m - 1, d, 12, 0, 0, 0);
 
-      const keyboard = buildDateKeyboard(schedules, baseDate);
+      const isAll = await isWriteScopeAll(ctx);
+      const keyboard = buildDateKeyboard(schedules, baseDate, isAll);
 
       if (!keyboard) {
         await ctx.reply(`❌ В ближайшие 2 недели нет уроков по предмету "${subjectName}".`, {
@@ -308,7 +448,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       }
 
       await ctx.reply(
-        `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):`,
+        `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):` +
+          (isAll ? '\n\nДаты со знаком (?) — несколько вариантов, уточню после выбора.' : ''),
         {
           reply_markup: {
             inline_keyboard: keyboard
@@ -329,6 +470,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
   },
   async (ctx) => {
     if (ctx.callbackQuery) {
+      const data = ctx.callbackQuery.data;
+      if (await handleChoiceCallback(ctx, data)) return;
       await ctx.answerCbQuery();
       const action = ctx.callbackQuery.data;
 
@@ -348,7 +491,12 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     }
 
     const content = ctx.message.text.trim();
-    const { scheduleId, date, subjectName, selectedSchedule } = ctx.wizard.state;
+    const { scheduleId, date, subjectName, selectedSchedule, pendingMode, seenLastId, seenUpdatedAt } = ctx.wizard.state;
+
+    if (pendingMode == null) {
+      await ctx.reply('Выбери действие кнопками: ➕ Добавить / 🔄 Заменить / ❌ Отмена');
+      return;
+    }
 
     if (!content || content.length === 0) {
       await ctx.reply('❌ Текст домашнего задания не может быть пустым. Попробуйте еще раз:', {
@@ -357,6 +505,62 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         }
       });
       return;
+    }
+
+    if (pendingMode === 'replace') {
+      try {
+        const dateStr = date.toISOString().split('T')[0];
+        const res = await replaceHomeworkConditional({
+          scheduleId,
+          dateStr,
+          lastId: seenLastId,
+          seenUpdatedAt,
+          content,
+          userId: ctx.from.id
+        });
+        if (res.ok) {
+          const dayOfWeek = getMoscowDayOfWeek(date);
+          const lessonNumber = selectedSchedule ? selectedSchedule.lessonNumber : '';
+          await ctx.reply(
+            `✅ Домашнее задание заменено!\n\n` +
+              `📅 ${getDayName(dayOfWeek)}, ${formatDate(date)}\n` +
+              `📚 ${subjectName} (${lessonNumber} урок)\n` +
+              `📝 ${content}`,
+            {
+              reply_markup: {
+                inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+              }
+            }
+          );
+          return ctx.scene.leave();
+        }
+        const rows = res.rows || [];
+        if (rows.length === 0) {
+          await ctx.reply('⚠️ Запись пропала, пока ты писал. Попробуй добавить заново:', {
+            reply_markup: {
+              inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+            }
+          });
+          return ctx.scene.leave();
+        }
+        const last = rows[rows.length - 1];
+        ctx.wizard.state.pendingMode = null;
+        ctx.wizard.state.seenLastId = last.id;
+        ctx.wizard.state.seenUpdatedAt = last.updatedAt;
+        const fresh = await formatExistingHomeworkText({ subjectName, date, rows });
+        await ctx.reply(`⚠️ Пока ты писал, запись изменилась. Вот свежие:\n\n${fresh}`, {
+          reply_markup: existingHomeworkKeyboard()
+        });
+        return;
+      } catch (error) {
+        console.error('Ошибка при замене домашнего задания:', error);
+        await ctx.reply('❌ Произошла ошибка при замене домашнего задания. Попробуйте позже.', {
+          reply_markup: {
+            inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+          }
+        });
+        return ctx.scene.leave();
+      }
     }
 
     try {
@@ -393,5 +597,23 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     return ctx.scene.leave();
   }
 );
+
+/**
+ * Пишет ли текущий пользователь в scope all (нужен disambiguation).
+ * Master OFF ≡ all для всех (P2 §3.1) — но запись идёт как в OLD, без уточнений.
+ * @param {object} ctx
+ * @returns {Promise<boolean>}
+ */
+async function isWriteScopeAll(ctx) {
+  try {
+    const { isMultiprofileEnabled } = require('../utils/settings');
+    const enabled = await isMultiprofileEnabled();
+    if (!enabled) return false;
+    const opts = await resolveAudienceOpts(ctx);
+    return !!(opts && opts.scope === 'all');
+  } catch (_e) {
+    return false;
+  }
+}
 
 module.exports = addHomeworkOnDateScene;

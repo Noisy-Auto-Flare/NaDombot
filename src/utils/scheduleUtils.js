@@ -4,7 +4,12 @@ const { getDayOfWeek, getNextDayOfWeek } = require('./dateUtils');
 const { getMoscowDayOfWeek } = require('./moscowTime');
 const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
 const { subjectsMatch } = require('./subjectNormalizer');
-const { isVisible } = require('./audience');
+const { isVisibleWithScope, buildAudienceTag } = require('./audience');
+
+/**
+ * Лимит длины одного сообщения Telegram для чанкинга merged-view (P2: 4000, не 4096).
+ */
+const MESSAGE_CHUNK_LIMIT = 4000;
 
 /**
  * Утилиты для работы с расписанием
@@ -36,9 +41,8 @@ async function findNextLesson(subjectName, fromDate = new Date(), userProfile = 
     } catch (_e) {
       enabled = false;
     }
-    if (enabled) {
-      schedules = schedules.filter((s) => isVisible(s, userProfile));
-    }
+    // P2 scope='all'/master OFF: фильтр только по классу (наблюдатель видит все варианты)
+    schedules = schedules.filter((s) => isVisibleWithScope(s, userProfile, enabled));
   }
 
   if (schedules.length === 0) {
@@ -192,39 +196,143 @@ async function getHomeworkForWeek(userId, startDate = new Date()) {
 }
 
 /**
- * Форматировать домашнее задание для отображения
+ * Сгруппировать строки домашки по scheduleId с дедупом одинаковых текстов (P2 §4a).
+ * Дубли одного урока: уникальные тексты (trim) в порядке updatedAt, join — на показе.
+ * @param {Array} homeworks - строки Homework (scheduleId, content, updatedAt)
+ * @returns {Map<number, Array<string>>} scheduleId → уникальные тексты
  */
-function formatHomework(homeworkData) {
+function mergeHomeworkBySchedule(homeworks) {
+  const bySchedule = new Map();
+  const sorted = [...(homeworks || [])].sort((a, b) => {
+    const ta = a && a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b && b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return ta - tb;
+  });
+  for (const hw of sorted) {
+    const text = hw && hw.content != null ? String(hw.content).trim() : '';
+    if (!text) continue;
+    if (!bySchedule.has(hw.scheduleId)) bySchedule.set(hw.scheduleId, []);
+    const list = bySchedule.get(hw.scheduleId);
+    if (!list.includes(text)) list.push(text);
+  }
+  return bySchedule;
+}
+
+/**
+ * Загрузить контекст тегов для merged-рендера: шаблон из audience.json (через БД,
+ * записано лоадером; TAG_TEMPLATE из ENV не используем) + имена треков/подгрупп.
+ * @returns {Promise<{template:string, showClass:boolean, maxSegments:number, trackNames:Map, subgroupNames:Map}>}
+ */
+async function getTagContext() {
+  let tags = null;
+  try {
+    const { getTagsConfig } = require('./audienceLoader');
+    tags = await getTagsConfig();
+  } catch (_e) {
+    tags = null;
+  }
+  const template = (tags && tags.template) || '{track} · {subgroup}';
+  const showClass = !!(tags && tags.showClass);
+  const maxSegments = (tags && tags.maxSegments) || 4;
+  const trackNames = new Map();
+  const subgroupNames = new Map();
+  try {
+    const { Track, Subgroup } = require('../models');
+    const tracks = await Track.findAll({ raw: true });
+    for (const t of tracks || []) trackNames.set(t.id, t.name);
+    const subs = await Subgroup.findAll({ raw: true });
+    for (const s of subs || []) subgroupNames.set(s.id, { name: s.name || null, teacher: s.teacher || null });
+  } catch (_e) {
+    // fallback: теги построятся по голым id
+  }
+  return { template, showClass, maxSegments, trackNames, subgroupNames };
+}
+
+/**
+ * Merged-рендер домашки на дату (P2 §4, display-time merge).
+ * - Дубли одного scheduleId: join уникальных текстов через "\n\n", без тегов.
+ * - Варианты аудиторий (разные scheduleId): соседние строки, каждая с обязательным
+ *   тегом по tags.template (дефолт "[Тех · Белова]").
+ * Чистая синхронная функция; tagCtx опционален (null → теги по голым id).
+ * @param {{date: Date, schedules: Array, homeworks: Array}} homeworkData
+ * @param {{template:string, showClass:boolean, maxSegments:number, trackNames:Map, subgroupNames:Map}|null} [tagCtx]
+ * @returns {string}
+ */
+function formatHomeworkMerged(homeworkData, tagCtx = null) {
   const { date, schedules, homeworks } = homeworkData;
   const { formatDate, getDayName } = require('./dateUtils');
 
   const dayOfWeek = getDayOfWeek(date);
   let result = `📅 ${getDayName(dayOfWeek)}, ${formatDate(date)}\n\n`;
 
-  if (schedules.length === 0) {
+  if (!schedules || schedules.length === 0) {
     result += 'Расписание пусто\n';
     return result;
   }
 
-  // Создаем мапу домашних заданий по scheduleId
-  const homeworkMap = new Map();
-  homeworks.forEach((hw) => {
-    homeworkMap.set(hw.scheduleId, hw.content);
+  const merged = mergeHomeworkBySchedule(homeworks);
+  const ordered = [...schedules].sort((a, b) => {
+    if (a.lessonNumber !== b.lessonNumber) return a.lessonNumber - b.lessonNumber;
+    return (a.id || 0) - (b.id || 0);
   });
 
-  // Выводим уроки с домашним заданием
-  schedules.forEach((schedule) => {
-    const homework = homeworkMap.get(schedule.id);
-    if (homework) {
-      result += `${schedule.lessonNumber}. ${schedule.subjectName}\n`;
-      result += `   📝 ${homework}\n\n`;
+  for (const schedule of ordered) {
+    const roomSuffix = schedule.room ? ` — каб. ${schedule.room}` : '';
+    const tag = buildAudienceTag(schedule, tagCtx || {}, tagCtx || {});
+    const tagSuffix = tag ? ` ${tag}` : '';
+    result += `${schedule.lessonNumber}. ${schedule.subjectName}${roomSuffix}${tagSuffix}\n`;
+    const texts = merged.get(schedule.id);
+    if (texts && texts.length > 0) {
+      result += texts.map((t) => `   📝 ${t}`).join('\n\n') + '\n\n';
     } else {
-      result += `${schedule.lessonNumber}. ${schedule.subjectName}\n`;
-      result += `   ✅ Нет домашнего задания\n\n`;
+      result += '   ✅ Нет домашнего задания\n\n';
     }
-  });
+  }
 
   return result;
+}
+
+/**
+ * Форматировать домашнее задание для отображения (merged-view; P2 §4).
+ * При выключенном флаге это и есть поведение OFF (тот же код, что scope all).
+ */
+function formatHomework(homeworkData, tagCtx = null) {
+  return formatHomeworkMerged(homeworkData, tagCtx);
+}
+
+/**
+ * Разбить длинный текст на чанки ≤ limit по границам строк (P2: лимит 4000).
+ * @param {string} text
+ * @param {number} [limit=4000]
+ * @returns {Array<string>}
+ */
+function splitMessageChunks(text, limit = MESSAGE_CHUNK_LIMIT) {
+  const src = String(text == null ? '' : text);
+  if (src.length <= limit) return [src];
+  const lines = src.split('\n');
+  const parts = [];
+  let current = '';
+  const pushLine = (line) => {
+    const candidate = current ? current + '\n' + line : line;
+    if (candidate.length > limit) {
+      if (current) parts.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  };
+  for (const line of lines) {
+    // строка длиннее лимита — режем на куски, каждый идёт через обычный аккумулятор
+    if (line.length > limit) {
+      for (let i = 0; i < line.length; i += limit) {
+        pushLine(line.slice(i, i + limit));
+      }
+      continue;
+    }
+    pushLine(line);
+  }
+  if (current) parts.push(current);
+  return parts.length ? parts : [''];
 }
 
 module.exports = {
@@ -233,4 +341,9 @@ module.exports = {
   getHomeworkForDate,
   getHomeworkForWeek,
   formatHomework,
+  formatHomeworkMerged,
+  mergeHomeworkBySchedule,
+  getTagContext,
+  splitMessageChunks,
+  MESSAGE_CHUNK_LIMIT,
 };

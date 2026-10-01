@@ -30,7 +30,8 @@ const {
   handleProfileEditClass,
   handleProfileEditTrack,
   handleProfileEditSubgroup,
-  handleProfileReset
+  handleProfileReset,
+  handleProfileToggleScope
 } = require('./handlers/commands');
 
 // Регистрация сцен
@@ -115,6 +116,7 @@ bot.action('profile_edit_class', handleProfileEditClass);
 bot.action('profile_edit_track', handleProfileEditTrack);
 bot.action('profile_edit_subgroup', handleProfileEditSubgroup);
 bot.action('profile_reset', handleProfileReset);
+bot.action('profile_toggle_scope', handleProfileToggleScope);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {

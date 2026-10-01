@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const { Schedule, Homework } = require('../models');
 const { subjectsMatch, normalizeSubject } = require('../utils/subjectNormalizer');
-const { isVisible } = require('../utils/audience');
+const { isVisibleWithScope } = require('../utils/audience');
 
 /**
  * Сервисный слой для расписания — изолирует Sequelize от сцен
@@ -133,6 +133,10 @@ async function findBySubjectNormalized(input, options = null, maybeDayOfWeek = n
     } else if (options.dayOfWeek != null) {
       dayOfWeek = options.dayOfWeek;
     }
+    // P2: scope пробрасываем (scope='all' → фильтр только по классу)
+    if (options && typeof options === 'object' && options.scope != null && audience) {
+      audience.scope = options.scope;
+    }
   }
   if (maybeDayOfWeek != null && dayOfWeek == null && typeof maybeDayOfWeek === 'number') {
     dayOfWeek = maybeDayOfWeek;
@@ -156,9 +160,8 @@ async function findBySubjectNormalized(input, options = null, maybeDayOfWeek = n
     } catch (_e) {
       enabled = true;
     }
-    if (enabled) {
-      filtered = filtered.filter((s) => isVisible(s, audience));
-    }
+    // P2: scope='all'/master OFF → совпадение по классу (все варианты аудитории)
+    filtered = filtered.filter((s) => isVisibleWithScope(s, audience, enabled));
   }
   return filtered;
 }

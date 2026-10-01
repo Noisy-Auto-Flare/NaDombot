@@ -16,6 +16,9 @@ const { Op } = require('sequelize');
 
 /**
  * Нормализовать профиль аудитории: trim, null для пустых строк.
+ * Поле `scope` ('own'|'all') пробрасывается как есть (P2) — используется
+ * getAudienceWhere/isVisibleWithScope, на SQL-фильтр трека/подгруппы не влияет
+ * при scope='all' (только класс).
  * @param {UserAudienceProfile|null|undefined} profile
  * @returns {UserAudienceProfile|null} нормализованный профиль или null если нет classId
  */
@@ -27,11 +30,13 @@ function normalizeAudience(profile) {
   const subgroupIdRaw = profile.subgroupId;
   const trackId = typeof trackIdRaw === 'string' ? trackIdRaw.trim() : trackIdRaw;
   const subgroupId = typeof subgroupIdRaw === 'string' ? subgroupIdRaw.trim() : subgroupIdRaw;
-  return {
+  const out = {
     classId,
     trackId: trackId && String(trackId).length ? String(trackId) : null,
     subgroupId: subgroupId && String(subgroupId).length ? String(subgroupId) : null
   };
+  if (profile.scope === 'all' || profile.scope === 'own') out.scope = profile.scope;
+  return out;
 }
 
 /**
@@ -67,6 +72,8 @@ function getAudienceWhere(userProfile) {
   const normalized = normalizeAudience(userProfile);
   if (!normalized) return {};
   const { classId, trackId, subgroupId } = normalized;
+  // P2 scope='all' (наблюдатель): только класс, без фильтра трека/подгруппы
+  if (normalized.scope === 'all') return { classId };
   const where = { classId };
 
   // trackId: null — общий; иначе должен совпасть либо быть null
@@ -88,6 +95,112 @@ function getAudienceWhere(userProfile) {
 
 module.exports = {
   isVisible,
+  isVisibleWithScope,
+  getEffectiveScope,
+  buildAudienceTag,
+  shortTrackLabel,
+  shortSubgroupLabel,
   getAudienceWhere,
   normalizeAudience
 };
+
+/**
+ * Эффективный scope с учётом мастер-флага (P2 §3.1):
+ * master OFF ≡ принудительный 'all' для всех.
+ * @param {object|null} userProfile
+ * @param {boolean} multiprofileEnabled
+ * @returns {'own'|'all'}
+ */
+function getEffectiveScope(userProfile, multiprofileEnabled) {
+  if (!multiprofileEnabled) return 'all';
+  if (userProfile && userProfile.scope === 'all') return 'all';
+  return 'own';
+}
+
+/**
+ * Видимость урока с учётом scope (P2 §3.1).
+ * scope='all' (или master OFF): совпадение только по classId, трек/подгруппа не фильтруют.
+ * Иначе — строгий isVisible.
+ * @param {object} schedule - строка расписания
+ * @param {object} userProfile - профиль пользователя (может содержать scope)
+ * @param {boolean} multiprofileEnabled
+ * @returns {boolean}
+ */
+function isVisibleWithScope(schedule, userProfile, multiprofileEnabled) {
+  if (!schedule || !userProfile) return false;
+  if (!multiprofileEnabled) return true;
+  if (userProfile.scope === 'all') {
+    const sClass = schedule.classId != null && String(schedule.classId).trim() ? String(schedule.classId).trim() : null;
+    const uClass = userProfile.classId != null && String(userProfile.classId).trim() ? String(userProfile.classId).trim() : null;
+    if (!uClass || !sClass) return true;
+    return sClass === uClass;
+  }
+  return isVisible(schedule, userProfile);
+}
+
+/**
+ * Короткие подписи треков для тегов (примеры из спек: tech→«Тех», soc→«Соц.-эконом.»).
+ * Неизвестные id — первое слово полного имени, иначе сам id.
+ * @param {string|null} trackId
+ * @param {string|null} trackName
+ * @returns {string} '' если ни id, ни имени нет
+ */
+function shortTrackLabel(trackId, trackName) {
+  const SHORT = { tech: 'Тех', soc: 'Соц.-эконом.' };
+  if (trackId && SHORT[trackId]) return SHORT[trackId];
+  if (trackName && String(trackName).trim()) return String(trackName).trim().split(/\s+/)[0];
+  if (trackId && String(trackId).trim()) return String(trackId).trim();
+  return '';
+}
+
+/**
+ * Короткая подпись подгруппы для тегов: имя (уже короткое: «Белова»),
+ * иначе фамилия из teacher («Белова И.В.» → «Белова»), иначе id.
+ * @param {string|null} subgroupId
+ * @param {string|null} subgroupName
+ * @param {string|null} teacher
+ * @returns {string} '' если всё пусто
+ */
+function shortSubgroupLabel(subgroupId, subgroupName, teacher) {
+  if (subgroupName && String(subgroupName).trim()) return String(subgroupName).trim();
+  if (teacher && String(teacher).trim()) return String(teacher).trim().split(/\s+/)[0];
+  if (subgroupId && String(subgroupId).trim()) return String(subgroupId).trim();
+  return '';
+}
+
+/**
+ * Тег аудитории урока по шаблону tags.template из audience.json (P2 §4).
+ * Пустые фасеты выпадают; класс — только при showClass; сегментов не больше maxSegments.
+ * Общий урок (все фасеты пусты) → '' (тег не нужен).
+ * @param {object} schedule - {classId, trackId, subgroupId}
+ * @param {{trackNames?: Map<string,string>, subgroupNames?: Map<string,{name:string|null,teacher:string|null}>}} [lookups]
+ * @param {{template?: string, showClass?: boolean, maxSegments?: number}} [tagsConfig]
+ * @returns {string} '' или '[Тех · Белова]'
+ */
+function buildAudienceTag(schedule, lookups = {}, tagsConfig = {}) {
+  const template = (tagsConfig && tagsConfig.template) || '{track} · {subgroup}';
+  const showClass = !!(tagsConfig && tagsConfig.showClass);
+  const maxSegments = (tagsConfig && Number.isInteger(tagsConfig.maxSegments) && tagsConfig.maxSegments > 0)
+    ? tagsConfig.maxSegments
+    : 4;
+  const trackNames = (lookups && lookups.trackNames) || new Map();
+  const subgroupNames = (lookups && lookups.subgroupNames) || new Map();
+
+  const trackSeg = schedule.trackId
+    ? shortTrackLabel(schedule.trackId, trackNames.get(schedule.trackId) || null)
+    : '';
+  let subSeg = '';
+  if (schedule.subgroupId) {
+    const info = subgroupNames.get(schedule.subgroupId) || {};
+    subSeg = shortSubgroupLabel(schedule.subgroupId, info.name || null, info.teacher || null);
+  }
+  const classSeg = showClass && schedule.classId ? String(schedule.classId) : '';
+
+  const filled = String(template)
+    .replace('{track}', trackSeg)
+    .replace('{subgroup}', subSeg)
+    .replace('{class}', classSeg);
+  const segments = filled.split('·').map((s) => s.trim()).filter((s) => s.length > 0).slice(0, maxSegments);
+  if (segments.length === 0) return '';
+  return `[${segments.join(' · ')}]`;
+}

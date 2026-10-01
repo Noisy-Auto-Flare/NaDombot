@@ -1,4 +1,4 @@
-const { getHomeworkForDate, getHomeworkForWeek, formatHomework } = require('../utils/scheduleUtils');
+const { getHomeworkForDate, getHomeworkForWeek, formatHomework, getTagContext, MESSAGE_CHUNK_LIMIT } = require('../utils/scheduleUtils');
 const { getNextWorkDay } = require('../utils/dateUtils');
 const { toggleHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
 const { isAdmin } = require('../middleware/isAdmin');
@@ -128,16 +128,20 @@ async function handleProfile(ctx) {
         subgroupLabel = profile.subgroupId;
       }
     }
+    const scopeLabel = profile.scope === 'all' ? 'Всё (наблюдатель)' : 'Моё';
+    const toggleLabel = profile.scope === 'all' ? '👁 Переключить: Моё' : '👁 Переключить: Всё';
     const text =
       '👤 Ваш профиль\n' +
       `🏫 Класс: ${classLabel}\n` +
       `🧬 Профиль: ${trackLabel}${trackIdPart}\n` +
       `👩‍🏫 Английский: ${subgroupLabel}\n` +
+      `👁 Режим: ${scopeLabel}\n` +
       '\nВыберите что изменить:';
     const keyboard = [
       [{ text: '🏫 Изменить класс', callback_data: 'profile_edit_class' }],
       [{ text: '🧬 Изменить профиль', callback_data: 'profile_edit_track' }],
       [{ text: '👩‍🏫 Изменить учителя', callback_data: 'profile_edit_subgroup' }],
+      [{ text: toggleLabel, callback_data: 'profile_toggle_scope' }],
       [{ text: '🔄 Сбросить профиль', callback_data: 'profile_reset' }],
       [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]
     ];
@@ -173,6 +177,44 @@ async function handleProfileEditTrack(ctx) {
 async function handleProfileEditSubgroup(ctx) {
   await ctx.answerCbQuery().catch(() => {});
   await ctx.scene.enter('selectProfile', { edit: 'subgroup' });
+}
+
+/**
+ * Тоггл персонального охвата 👁 Моё / Всё (P2 §3.1).
+ * Возврат на «Моё» без выбранного профиля (track+subgroup пусты) →
+ * частичный онбординг через существующий editMode.
+ * @param {object} ctx
+ */
+async function handleProfileToggleScope(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    const { getUserProfile, setUserScope } = require('../utils/userProfile');
+    const profile = await getUserProfile(ctx.from.id);
+    if (!profile) {
+      await ctx.reply('❌ Профиль не выбран. Выберите класс, профиль и учителя:', {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '👋 Выбрать профиль', callback_data: 'select_profile' }],
+            [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]
+          ]
+        }
+      });
+      return;
+    }
+    const nextScope = profile.scope === 'all' ? 'own' : 'all';
+    await setUserScope(ctx.from.id, nextScope);
+    if (nextScope === 'own' && !profile.trackId && !profile.subgroupId) {
+      // в «Моём» нужны поля профиля — частичный онбординг (существующий editMode)
+      await ctx.reply('👁 Режим «Моё»: теперь выбери свой профиль');
+      await ctx.scene.enter('selectProfile', { edit: 'track' });
+      return;
+    }
+    await ctx.reply(nextScope === 'all' ? '👀 Включён режим «Видеть всё»' : '📚 Включён режим «Моё»');
+    await handleProfile(ctx);
+  } catch (e) {
+    console.error('handleProfileToggleScope', e.message || e);
+    await ctx.reply('❌ Не удалось переключить режим. Попробуйте позже.');
+  }
 }
 
 /**
@@ -249,7 +291,8 @@ async function handleHomeworkTomorrow(ctx) {
   try {
     const nextWorkDay = getNextWorkDay(new Date());
     const homeworkData = await getHomeworkForDate(ctx.from.id, nextWorkDay);
-    const formatted = formatHomework(homeworkData);
+    const tagCtx = await getTagContext().catch(() => null);
+    const formatted = formatHomework(homeworkData, tagCtx);
     await ctx.reply(formatted, {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -273,16 +316,17 @@ async function handleHomeworkWeek(ctx) {
       return;
     }
     let message = '📆 Домашнее задание на неделю:\n\n';
+    const tagCtx = await getTagContext().catch(() => null);
     for (const dayData of weekHomework) {
-      const formatted = formatHomework(dayData);
+      const formatted = formatHomework(dayData, tagCtx);
       message += formatted + '\n';
     }
-    const maxLength = 4000;
+    const maxLength = MESSAGE_CHUNK_LIMIT;
     if (message.length > maxLength) {
       const parts = [];
       let currentPart = '';
       for (const dayData of weekHomework) {
-        const dayText = formatHomework(dayData) + '\n\n';
+        const dayText = formatHomework(dayData, tagCtx) + '\n\n';
         if (currentPart.length + dayText.length > maxLength) {
           parts.push(currentPart);
           currentPart = dayText;
@@ -398,6 +442,7 @@ module.exports = {
   handleToggleHomeworkVisibility,
   handleCurrentLesson,
   handleProfile,
+  handleProfileToggleScope,
   handleSelectProfile,
   handleProfileEditClass,
   handleProfileEditTrack,

@@ -28,11 +28,13 @@ async function getUserProfile(userId) {
 
 /**
  * Сохранить профиль пользователя + денормализация в User.
+ * scope: 'own' (дефолт для новых) | 'all' (наблюдатель); при update без scope —
+ * сохраняется существующий (pre-P2 строки без колонки → 'own' через backfill).
  * @param {number|string} userId
- * @param {{classId:string, trackId:string|null, subgroupId:string|null}} data
+ * @param {{classId:string, trackId:string|null, subgroupId:string|null, scope?:string}} data
  * @returns {Promise<import('../models/UserProfile')>}
  */
-async function setUserProfile(userId, { classId, trackId, subgroupId }) {
+async function setUserProfile(userId, { classId, trackId, subgroupId, scope }) {
   const normClassId = typeof classId === 'string' ? classId.trim() : classId;
   const normTrackId = trackId != null && String(trackId).trim() ? String(trackId).trim() : null;
   const normSubgroupId = subgroupId != null && String(subgroupId).trim() ? String(subgroupId).trim() : null;
@@ -50,6 +52,14 @@ async function setUserProfile(userId, { classId, trackId, subgroupId }) {
 
   const version = existing ? (existing.version || 1) + 1 : 1;
 
+  // scope: явный валидный → он; иначе сохранить существующий; иначе 'own'
+  let finalScope = 'own';
+  if (scope === 'all' || scope === 'own') {
+    finalScope = scope;
+  } else if (existing && (existing.scope === 'all' || existing.scope === 'own')) {
+    finalScope = existing.scope;
+  }
+
   // upsert UserProfile
   try {
     await UserProfile.upsert({
@@ -57,15 +67,16 @@ async function setUserProfile(userId, { classId, trackId, subgroupId }) {
       classId: normClassId,
       trackId: finalTrackId,
       subgroupId: finalSubgroupId,
+      scope: finalScope,
       version
     });
   } catch (e) {
     console.error('setUserProfile upsert', e.message || e);
     // fallback: create or update manually
     if (existing) {
-      await existing.update({ classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, version });
+      await existing.update({ classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: finalScope, version });
     } else {
-      await UserProfile.create({ userId, classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, version });
+      await UserProfile.create({ userId, classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: finalScope, version });
     }
   }
 
@@ -158,6 +169,25 @@ async function getAvailableSubgroups(subject = 'английский', classId =
 }
 
 /**
+ * Переключить персональный охват пользователя (P2 §3.1).
+ * @param {number|string} userId
+ * @param {'own'|'all'} scope
+ * @returns {Promise<import('../models/UserProfile')|null>} null если профиля нет
+ */
+async function setUserScope(userId, scope) {
+  if (scope !== 'all' && scope !== 'own') throw new Error('SCOPE_INVALID');
+  const profile = await getUserProfile(userId);
+  if (!profile) return null;
+  try {
+    await profile.update({ scope, version: (profile.version || 1) + 1 });
+  } catch (e) {
+    console.error('setUserScope update', e.message || e);
+    await UserProfile.update({ scope }, { where: { userId } });
+  }
+  return getUserProfile(userId);
+}
+
+/**
  * Wrapper для isMultiprofileEnabled из settings.
  * @returns {Promise<boolean>}
  */
@@ -168,6 +198,7 @@ async function isMultiprofileEnabled() {
 module.exports = {
   getUserProfile,
   setUserProfile,
+  setUserScope,
   getAvailableClasses,
   getAvailableTracks,
   getAvailableSubgroups,

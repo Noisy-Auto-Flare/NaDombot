@@ -35,6 +35,15 @@ const UserProfile = sequelize.define(
       references: { model: 'subgroups', key: 'id' },
       comment: 'FK → Subgroup.id, NULL = без подгруппы'
     },
+    scope: {
+      type: DataTypes.STRING(10),
+      allowNull: false,
+      defaultValue: 'own',
+      validate: {
+        isIn: [['own', 'all']]
+      },
+      comment: "Персональный охват P2: 'own' (только своё) | 'all' (наблюдатель, весь класс)"
+    },
     version: {
       type: DataTypes.INTEGER,
       allowNull: false,
