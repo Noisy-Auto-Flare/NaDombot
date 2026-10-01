@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { Sequelize } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
@@ -11,7 +12,7 @@ try {
   fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
 } catch (err) {
   if (err.code !== 'EEXIST') {
-    console.error('Ошибка при создании директории для SQLite:', err.message);
+    logger.error('Ошибка при создании директории для SQLite:', err.message);
   }
 }
 
@@ -19,14 +20,14 @@ try {
 try {
   fs.accessSync(dir, fs.constants.W_OK);
 } catch (_err) {
-  console.error(`Нет прав на запись в директорию ${dir}. Проверьте права доступа.`);
+  logger.error(`Нет прав на запись в директорию ${dir}. Проверьте права доступа.`);
   process.exit(1);
 }
 
 const sequelize = new Sequelize({
   dialect: 'sqlite',
   storage: sqlitePath,
-  logging: process.env.NODE_ENV === 'development' ? console.log : false,
+  logging: process.env.NODE_ENV === 'development' ? (...args) => logger.debug(...args) : false,
   pool: { max: 1, min: 0 },
 });
 
@@ -34,10 +35,10 @@ const sequelize = new Sequelize({
 async function testConnection() {
   try {
     await sequelize.authenticate();
-    console.log('✅ Подключение к базе данных установлено успешно.');
+    logger.info('✅ Подключение к базе данных установлено успешно.');
     return true;
   } catch (error) {
-    console.error('❌ Ошибка подключения к базе данных:', error.message);
+    logger.error('❌ Ошибка подключения к базе данных:', error.message);
     return false;
   }
 }
@@ -73,7 +74,7 @@ function backupDatabaseFile() {
   if (!fs.existsSync(sqlitePath)) return null;
   const backupPath = `${sqlitePath}.p0-backup-${p0Timestamp()}`;
   fs.copyFileSync(sqlitePath, backupPath);
-  console.log(`✅ P0 бэкап БД: ${backupPath}`);
+  logger.info(`✅ P0 бэкап БД: ${backupPath}`);
   return backupPath;
 }
 
@@ -117,7 +118,7 @@ async function detectBrokenSchedules() {
       }
     }
   } catch (e) {
-    console.warn('Проверка схемы schedules пропустила:', e.message || e);
+    logger.warn('Проверка схемы schedules пропустила:', e.message || e);
     return { broken: false, culprits };
   }
   return { broken: culprits.length > 0, culprits };
@@ -173,18 +174,18 @@ async function repairSchedulesD2() {
   const { broken, culprits } = await detectBrokenSchedules();
   if (!broken) return 'ok-clean';
 
-  console.log(`Обнаружена битая схема schedules (одиночные UNIQUE: ${culprits.join(', ')}), чиню по процедуре D2...`);
+  logger.info(`Обнаружена битая схема schedules (одиночные UNIQUE: ${culprits.join(', ')}), чиню по процедуре D2...`);
 
   // 0. Бэкап файла БД; неудача → abort без DROP
   try {
     backupDatabaseFile();
   } catch (backupErr) {
-    console.error(`❌ P0 D2: бэкап БД не удался (${backupErr.message}), DROP запрещён — ремонт прерван, нужен ручной бэкап`);
+    logger.error(`❌ P0 D2: бэкап БД не удался (${backupErr.message}), DROP запрещён — ремонт прерван, нужен ручной бэкап`);
     return 'aborted-no-backup';
   }
 
   const fkBefore = await foreignKeyCheckCount();
-  console.log(`P0 D2: foreign_key_check до ремонта: ${fkBefore}`);
+  logger.info(`P0 D2: foreign_key_check до ремонта: ${fkBefore}`);
   let countBefore = -1;
   try {
     const c = await sequelize.query('SELECT COUNT(*) AS cnt FROM schedules', { type: Sequelize.QueryTypes.SELECT });
@@ -205,7 +206,7 @@ async function repairSchedulesD2() {
       type: Sequelize.QueryTypes.SELECT
     });
     if (tmp.length) {
-      console.error(`❌ P0 D2: найден остаток прошлого ремонта (${REPAIR_TMP_TABLE}) — DROP запрещён, нужен ручной разбор`);
+      logger.error(`❌ P0 D2: найден остаток прошлого ремонта (${REPAIR_TMP_TABLE}) — DROP запрещён, нужен ручной разбор`);
       try {
         await sequelize.query('PRAGMA foreign_keys = ON');
       } catch (_fk) {
@@ -223,7 +224,7 @@ async function repairSchedulesD2() {
     // Дедуп только по полной аудитории, конфликт → keep max(updatedAt) + лог id
     const { kept: keptRows, droppedIds } = dedupeByAudience(allRows);
     if (droppedIds.length) {
-      console.log(`P0 D2: дедуп по полной аудитории — удалено дублей: ${droppedIds.length} (id: ${droppedIds.join(',')})`);
+      logger.info(`P0 D2: дедуп по полной аудитории — удалено дублей: ${droppedIds.length} (id: ${droppedIds.join(',')})`);
     }
 
     // SQLite ≥3.25 при RENAME переписывает REFERENCES в чужих таблицах (homeworks уехала бы
@@ -276,7 +277,7 @@ async function repairSchedulesD2() {
       void _fk2;
     }
     const fkAfter = await foreignKeyCheckCount();
-    console.log(`P0 D2: foreign_key_check после ремонта: ${fkAfter}`);
+    logger.info(`P0 D2: foreign_key_check после ремонта: ${fkAfter}`);
     let countAfter = -1;
     try {
       const c2 = await sequelize.query('SELECT COUNT(*) AS cnt FROM schedules', { type: Sequelize.QueryTypes.SELECT });
@@ -284,10 +285,10 @@ async function repairSchedulesD2() {
     } catch (_e2) {
       void _e2;
     }
-    console.log(`✅ P0 D2: ремонт schedules завершён (строк: ${countBefore} → ${countAfter})`);
+    logger.info(`✅ P0 D2: ремонт schedules завершён (строк: ${countBefore} → ${countAfter})`);
     return 'ok-repaired';
   } catch (repairErr) {
-    console.error(`❌ P0 D2: ремонт schedules не удался (${repairErr.message}), таблица schedules_old_p0 сохранена для ручного разбора`);
+    logger.error(`❌ P0 D2: ремонт schedules не удался (${repairErr.message}), таблица schedules_old_p0 сохранена для ручного разбора`);
     try {
       await sequelize.query('PRAGMA legacy_alter_table = OFF');
     } catch (_latOff2) {
@@ -318,7 +319,7 @@ async function ensureUserProfileScopeColumn() {
         allowNull: false,
         defaultValue: 'own'
       });
-      console.log('✅ Prelim миграция: добавлен user_profiles.scope');
+      logger.info('✅ Prelim миграция: добавлен user_profiles.scope');
     }
     try {
       await sequelize.query("UPDATE user_profiles SET scope='own' WHERE scope IS NULL OR scope=''");
@@ -326,7 +327,7 @@ async function ensureUserProfileScopeColumn() {
       void _bf;
     }
   } catch (preErr) {
-    console.warn('⚠️ Prelim P2 миграция user_profiles.scope:', preErr.message || preErr);
+    logger.warn('⚠️ Prelim P2 миграция user_profiles.scope:', preErr.message || preErr);
   }
 }
 
@@ -346,7 +347,7 @@ async function ensureUserEventTelemetryColumns() {
         allowNull: true,
         defaultValue: null
       });
-      console.log('✅ Prelim миграция: добавлен user_events.durationMs');
+      logger.info('✅ Prelim миграция: добавлен user_events.durationMs');
     }
     if (!desc.status) {
       await qi.addColumn('user_events', 'status', {
@@ -354,7 +355,7 @@ async function ensureUserEventTelemetryColumns() {
         allowNull: false,
         defaultValue: 'ok'
       });
-      console.log('✅ Prelim миграция: добавлен user_events.status');
+      logger.info('✅ Prelim миграция: добавлен user_events.status');
     }
     try {
       await sequelize.query("UPDATE user_events SET status='ok' WHERE status IS NULL OR status=''");
@@ -362,7 +363,7 @@ async function ensureUserEventTelemetryColumns() {
       void _bf;
     }
   } catch (preErr) {
-    console.warn('⚠️ Prelim P3 миграция user_events.durationMs/status:', preErr.message || preErr);
+    logger.warn('⚠️ Prelim P3 миграция user_events.durationMs/status:', preErr.message || preErr);
   }
 }
 
@@ -379,18 +380,18 @@ async function ensureSubgroupsV2Columns() {
     const { DataTypes } = require('sequelize');
     if (desc.teacherName && !desc.teacher) {
       await qi.addColumn('subgroups', 'teacher', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
-      console.log('✅ Prelim миграция: добавлен subgroups.teacher');
+      logger.info('✅ Prelim миграция: добавлен subgroups.teacher');
     }
     if (!desc.division) {
       await qi.addColumn('subgroups', 'division', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
-      console.log('✅ Prelim миграция: добавлен subgroups.division');
+      logger.info('✅ Prelim миграция: добавлен subgroups.division');
     }
     if (!desc.name) {
       await qi.addColumn('subgroups', 'name', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
-      console.log('✅ Prelim миграция: добавлен subgroups.name');
+      logger.info('✅ Prelim миграция: добавлен subgroups.name');
     }
   } catch (preErr) {
-    console.warn('⚠️ Prelim V2 миграция subgroups:', preErr.message || preErr);
+    logger.warn('⚠️ Prelim V2 миграция subgroups:', preErr.message || preErr);
   }
 }
 
@@ -427,13 +428,13 @@ async function migrateSubgroupsV2() {
       if (after && after.subject && after.subject.allowNull === false) {
         const { DataTypes: DT } = require('sequelize');
         await qi.changeColumn('subgroups', 'subject', { type: DT.STRING(40), allowNull: true, defaultValue: null });
-        console.log('✅ Миграция: subgroups.subject → nullable');
+        logger.info('✅ Миграция: subgroups.subject → nullable');
       }
     } catch (subjErr) {
-      console.warn('⚠️ subgroups.subject остался NOT NULL (subject=null встанет только на свежих БД):', subjErr.message || subjErr);
+      logger.warn('⚠️ subgroups.subject остался NOT NULL (subject=null встанет только на свежих БД):', subjErr.message || subjErr);
     }
   } catch (migErr) {
-    console.warn('⚠️ V2 миграция subgroups:', migErr.message || migErr);
+    logger.warn('⚠️ V2 миграция subgroups:', migErr.message || migErr);
   }
 }
 
@@ -469,7 +470,7 @@ async function seedFoundationIdempotent() {
   } catch (_bf) {
     void _bf;
   }
-  console.log('✅ V6 foundation seeded (Class/Track/Subgroup).');
+  logger.info('✅ V6 foundation seeded (Class/Track/Subgroup).');
 }
 
 function ensureDataMigrationsLedger() {
@@ -506,12 +507,12 @@ async function runDataMigrations() {
     try {
       mig = require(full);
     } catch (loadErr) {
-      console.warn(`⚠️ P0 ledger: не загрузилась миграция ${f}:`, loadErr.message || loadErr);
+      logger.warn(`⚠️ P0 ledger: не загрузилась миграция ${f}:`, loadErr.message || loadErr);
       continue;
     }
     const migId = (mig && mig.id) || f.replace(/\.js$/, '');
     if (!mig || typeof mig.up !== 'function') {
-      console.warn(`⚠️ P0 ledger: миграция ${f} без up() — пропуск`);
+      logger.warn(`⚠️ P0 ledger: миграция ${f} без up() — пропуск`);
       continue;
     }
     if (appliedSet.has(migId)) continue;
@@ -523,9 +524,9 @@ async function runDataMigrations() {
           transaction: t
         });
       });
-      console.log(`✅ P0 ledger: применена миграция ${migId}`);
+      logger.info(`✅ P0 ledger: применена миграция ${migId}`);
     } catch (migErr) {
-      console.warn(`⚠️ P0 ledger: миграция ${migId} не удалась:`, migErr.message || migErr);
+      logger.warn(`⚠️ P0 ledger: миграция ${migId} не удалась:`, migErr.message || migErr);
     }
   }
 }
@@ -534,9 +535,9 @@ async function writeSchemaVersion() {
   try {
     const { Setting } = require('../models');
     await Setting.upsert({ key: 'schema_version', value: SCHEMA_VERSION });
-    console.log(`✅ schema_version=${SCHEMA_VERSION}`);
+    logger.info(`✅ schema_version=${SCHEMA_VERSION}`);
   } catch (verErr) {
-    console.warn('⚠️ schema_version не записана:', verErr.message || verErr);
+    logger.warn('⚠️ schema_version не записана:', verErr.message || verErr);
   }
 }
 
@@ -546,7 +547,7 @@ async function syncDatabase() {
   try {
     await repairSchedulesD2();
   } catch (e) {
-    console.warn('Проверка схемы schedules пропустила:', e.message || e);
+    logger.warn('Проверка схемы schedules пропустила:', e.message || e);
   }
   try {
     // гарантируем что все модели зарегистрированы до sync
@@ -566,18 +567,18 @@ async function syncDatabase() {
       const ddesc = await qii.describeTable('schedules').catch(() => null);
       if (ddesc && !ddesc.classId) {
         await qii.addColumn('schedules', 'classId', { type: Sequelize.DataTypes.STRING(10), allowNull: false, defaultValue: '10А' });
-        console.log('✅ Prelim миграция: добавлен schedules.classId');
+        logger.info('✅ Prelim миграция: добавлен schedules.classId');
       }
       if (ddesc && !ddesc.trackId) {
         await qii.addColumn('schedules', 'trackId', { type: Sequelize.DataTypes.STRING(20), allowNull: true, defaultValue: null });
-        console.log('✅ Prelim миграция: добавлен schedules.trackId');
+        logger.info('✅ Prelim миграция: добавлен schedules.trackId');
       }
       if (ddesc && !ddesc.subgroupId) {
         await qii.addColumn('schedules', 'subgroupId', { type: Sequelize.DataTypes.STRING(40), allowNull: true, defaultValue: null });
-        console.log('✅ Prelim миграция: добавлен schedules.subgroupId');
+        logger.info('✅ Prelim миграция: добавлен schedules.subgroupId');
       }
     } catch (preMig) {
-      console.warn('⚠️ Prelim V6 миграция:', preMig.message || preMig);
+      logger.warn('⚠️ Prelim V6 миграция:', preMig.message || preMig);
     }
     // P1 item 1: колонки subgroups v2 ДО sync (иначе sync упадёт на subgroups_division)
     try {
@@ -606,15 +607,15 @@ async function syncDatabase() {
       const desc = await qi.describeTable('schedules');
       if (!desc.classId) {
         await qi.addColumn('schedules', 'classId', { type: Sequelize.DataTypes.STRING(10), allowNull: false, defaultValue: '10А' });
-        console.log('✅ Миграция: добавлен schedules.classId');
+        logger.info('✅ Миграция: добавлен schedules.classId');
       }
       if (!desc.trackId) {
         await qi.addColumn('schedules', 'trackId', { type: Sequelize.DataTypes.STRING(20), allowNull: true, defaultValue: null });
-        console.log('✅ Миграция: добавлен schedules.trackId');
+        logger.info('✅ Миграция: добавлен schedules.trackId');
       }
       if (!desc.subgroupId) {
         await qi.addColumn('schedules', 'subgroupId', { type: Sequelize.DataTypes.STRING(40), allowNull: true, defaultValue: null });
-        console.log('✅ Миграция: добавлен schedules.subgroupId');
+        logger.info('✅ Миграция: добавлен schedules.subgroupId');
       }
       // Индексы V6
       const schedIdx = await sequelize.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='schedules'", { type: Sequelize.QueryTypes.SELECT });
@@ -623,7 +624,7 @@ async function syncDatabase() {
       if (schedIdxNames.includes('unique_lesson_per_day')) {
         try {
           await sequelize.query('DROP INDEX IF EXISTS unique_lesson_per_day');
-          console.log('✅ Миграция: удалён legacy unique_lesson_per_day');
+          logger.info('✅ Миграция: удалён legacy unique_lesson_per_day');
         } catch (_dropLegacy) {
           void _dropLegacy;
         }
@@ -634,14 +635,14 @@ async function syncDatabase() {
       if (!schedIdxNamesAfter.includes('idx_schedules_day_lesson')) {
         try {
           await qi.addIndex('schedules', ['dayOfWeek', 'lessonNumber'], { name: 'idx_schedules_day_lesson' });
-          console.log('✅ Миграция: создан индекс idx_schedules_day_lesson');
+          logger.info('✅ Миграция: создан индекс idx_schedules_day_lesson');
         } catch (_idxErr) {
           void _idxErr;
         }
       }
       if (!schedIdxNamesAfter.includes('unique_lesson_per_audience')) {
         await qi.addIndex('schedules', ['classId', 'dayOfWeek', 'lessonNumber', 'trackId', 'subgroupId'], { unique: true, name: 'unique_lesson_per_audience' });
-        console.log('✅ Миграция: создан индекс unique_lesson_per_audience');
+        logger.info('✅ Миграция: создан индекс unique_lesson_per_audience');
       }
       if (!schedIdxNames.includes('schedules_class_id')) {
         await qi.addIndex('schedules', ['classId'], { name: 'schedules_class_id' });
@@ -661,14 +662,14 @@ async function syncDatabase() {
       const hwIdx = await sequelize.query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='homeworks'", { type: Sequelize.QueryTypes.SELECT });
       const hwIdxNames = hwIdx.map((r) => r.name);
       if (hwIdxNames.includes('unique_homework_per_date')) {
-        console.log('✅ Миграция: удалён legacy unique_homework_per_date');
+        logger.info('✅ Миграция: удалён legacy unique_homework_per_date');
       }
       if (!hwIdxNames.includes('idx_homework_schedule_date')) {
         await qi.addIndex('homeworks', ['scheduleId', 'date'], { name: 'idx_homework_schedule_date' });
-        console.log('✅ Миграция: создан индекс idx_homework_schedule_date');
+        logger.info('✅ Миграция: создан индекс idx_homework_schedule_date');
       }
     } catch (migErr) {
-      console.warn('⚠️ V6 миграция колонок/индексов:', migErr.message || migErr);
+      logger.warn('⚠️ V6 миграция колонок/индексов:', migErr.message || migErr);
     }
     // P1 item 1: subgroups → v2 (division/name/teacher, subject nullable) до сидов
     try {
@@ -681,41 +682,64 @@ async function syncDatabase() {
     } catch (_fk2) {
       void _fk2;
     }
-    console.log('✅ Модели синхронизированы с базой данных.');
+    logger.info('✅ Модели синхронизированы с базой данных.');
     try {
       const { seedLessonTimes } = require('../utils/seedLessonTimes');
       await seedLessonTimes();
-      console.log('✅ LessonTimes seeded.');
+      logger.info('✅ LessonTimes seeded.');
     } catch (seedErr) {
-      console.warn('⚠️ LessonTimes seeding failed:', seedErr.message || seedErr);
+      logger.warn('⚠️ LessonTimes seeding failed:', seedErr.message || seedErr);
     }
     // V6 foundation seed: только find-or-create/skip, деструктив — только ledger
     try {
       await seedFoundationIdempotent();
     } catch (foundationErr) {
-      console.warn('⚠️ V6 foundation seeding failed:', foundationErr.message || foundationErr);
+      logger.warn('⚠️ V6 foundation seeding failed:', foundationErr.message || foundationErr);
     }
     // P1 item 3: каталог аудиторий из файла поверх БД (не роняет boot)
     try {
       const { syncAudienceCatalog } = require('../utils/audienceLoader');
       await syncAudienceCatalog();
     } catch (audienceErr) {
-      console.warn('⚠️ audienceLoader failed:', audienceErr.message || audienceErr);
+      logger.warn('⚠️ audienceLoader failed:', audienceErr.message || audienceErr);
     }
     // Ledger одноразовых миграций данных (граница: схема — только sync())
     try {
       await runDataMigrations();
     } catch (ledgerErr) {
-      console.warn('⚠️ P0 ledger failed:', ledgerErr.message || ledgerErr);
+      logger.warn('⚠️ P0 ledger failed:', ledgerErr.message || ledgerErr);
     }
     // Диагностический ярлык схемы — после успешного sync
     await writeSchemaVersion();
+    // P4: итог sync одной строкой (таблицы/индексы/counts) — диагностика чистого boot
+    try {
+      const tables = await sequelize.query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      const indexes = await sequelize.query(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'",
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      const counts = [];
+      for (const t of ['schedules', 'homeworks', 'lesson_times', 'classes', 'tracks', 'subgroups']) {
+        try {
+          const c = await sequelize.query(`SELECT COUNT(*) AS cnt FROM "${t}"`, { type: Sequelize.QueryTypes.SELECT });
+          counts.push(`${t}=${c[0].cnt}`);
+        } catch (_e) {
+          void _e;
+        }
+      }
+      logger.info(`✅ syncDatabase итог: таблицы=${tables.length} индексы=${indexes.length} ${counts.join(' ')}`);
+    } catch (_summaryErr) {
+      void _summaryErr;
+    }
     // Миграция audience-unique: SQLite NULL != NULL, поэтому unique_lesson_per_day оставляем как legacy.
     // unique_lesson_per_audience уже создан через sync({alter:true}); дополнительная COALESCE-миграция не требуется для MVP.
     // Если в будущем потребуется строгая уникальность с NULL-as-value — дроп legacy индекса и пересоздание через COALESCE
     // выполняется под флагом; по умолчанию flag=0 — ничего не дропаем (сохранение совместимости).
   } catch (error) {
-    console.error('❌ Ошибка синхронизации:', error);
+    logger.error('❌ Ошибка синхронизации:', error);
 
     // Попытка безопасно восстановить отсутствующие таблицы по-отдельности.
     try {
@@ -751,34 +775,34 @@ async function syncDatabase() {
       await User.sync();
       await UserEvent.sync();
       await UserProfile.sync();
-      console.log('✅ Отдельные таблицы созданы/синхронизированы (fallback).');
+      logger.info('✅ Отдельные таблицы созданы/синхронизированы (fallback).');
       try {
         const { seedLessonTimes } = require('../utils/seedLessonTimes');
         await seedLessonTimes();
-        console.log('✅ LessonTimes seeded (fallback).');
+        logger.info('✅ LessonTimes seeded (fallback).');
       } catch (seedErr) {
-        console.warn('⚠️ LessonTimes seeding failed (fallback):', seedErr.message || seedErr);
+        logger.warn('⚠️ LessonTimes seeding failed (fallback):', seedErr.message || seedErr);
       }
       try {
         await seedFoundationIdempotent();
-        console.log('✅ V6 foundation seeded (fallback).');
+        logger.info('✅ V6 foundation seeded (fallback).');
       } catch (foundationFallbackErr) {
-        console.warn('⚠️ V6 foundation seeding failed (fallback):', foundationFallbackErr.message || foundationFallbackErr);
+        logger.warn('⚠️ V6 foundation seeding failed (fallback):', foundationFallbackErr.message || foundationFallbackErr);
       }
       try {
         const { syncAudienceCatalog } = require('../utils/audienceLoader');
         await syncAudienceCatalog();
       } catch (audienceFbErr) {
-        console.warn('⚠️ audienceLoader failed (fallback):', audienceFbErr.message || audienceFbErr);
+        logger.warn('⚠️ audienceLoader failed (fallback):', audienceFbErr.message || audienceFbErr);
       }
       try {
         await runDataMigrations();
       } catch (ledgerFbErr) {
-        console.warn('⚠️ P0 ledger failed (fallback):', ledgerFbErr.message || ledgerFbErr);
+        logger.warn('⚠️ P0 ledger failed (fallback):', ledgerFbErr.message || ledgerFbErr);
       }
       await writeSchemaVersion();
     } catch (fallbackErr) {
-      console.error('❌ Fallback синхронизации моделей не удался:', fallbackErr);
+      logger.error('❌ Fallback синхронизации моделей не удался:', fallbackErr);
     }
   }
 }

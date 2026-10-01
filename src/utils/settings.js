@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { Setting } = require('../models');
 
 const HOMEWORK_VISIBILITY_KEY = 'homework_visibility';
@@ -21,7 +22,7 @@ async function getHomeworkVisibility() {
       ? HOMEWORK_VISIBILITY_SHARED
       : HOMEWORK_VISIBILITY_PERSONAL;
   } catch (err) {
-    console.error('Ошибка при получении настройки видимости:', err);
+    logger.error('Ошибка при получении настройки видимости:', err);
     return HOMEWORK_VISIBILITY_PERSONAL;
   }
 }
@@ -40,7 +41,7 @@ async function setHomeworkVisibility(mode) {
       value: normalized
     });
   } catch (err) {
-    console.error('Ошибка при сохранении настройки видимости:', err);
+    logger.error('Ошибка при сохранении настройки видимости:', err);
     // persist failed — still return normalized value so callers have a deterministic result
   }
 
@@ -90,7 +91,7 @@ async function getMultiprofileEnabled() {
     const envDefault = parseEnvBool(process.env.MULTIPROFILE_ENABLED);
     return envDefault === true;
   } catch (err) {
-    console.error('Ошибка при получении настройки multiprofile:', err);
+    logger.error('Ошибка при получении настройки multiprofile:', err);
     return false;
   }
 }
@@ -123,7 +124,7 @@ async function setMultiprofileEnabled(enabled) {
       value: val
     });
   } catch (err) {
-    console.error('Ошибка при сохранении настройки multiprofile:', err);
+    logger.error('Ошибка при сохранении настройки multiprofile:', err);
   }
   return !!enabled;
 }

@@ -1,3 +1,4 @@
+const logger = require('../../utils/logger');
 const { getDayName } = require('../../utils/dateUtils');
 const scheduleService = require('../../services/scheduleService');
 const lessonTimeService = require('../../services/LessonTimeService');
@@ -44,7 +45,7 @@ async function handleEditSelect(ctx) {
     );
     ctx.wizard.state.action = 'edit';
   } catch (error) {
-    console.error('Ошибка при поиске урока для редактирования:', error);
+    logger.error('Ошибка при поиске урока для редактирования:', error);
     await ctx.reply('❌ Произошла ошибка. Попробуйте позже.', cancelKeyboard);
     return ctx.wizard.back();
   }
@@ -87,7 +88,7 @@ async function promptAudienceClass(ctx) {
     };
     await ctx.reply(`🏫 Выберите класс для урока:\n${list}\n\nОтправьте ID класса сообщением (например 10А) или выберите кнопкой:`, keyboard);
   } catch (e) {
-    console.error('promptAudienceClass error', e);
+    logger.error('promptAudienceClass error', e);
     await ctx.reply('🏫 Введите ID класса (например 10А) или \'-\' для 10А:', cancelKeyboard);
   }
 }
@@ -110,7 +111,7 @@ async function promptAudienceTrack(ctx) {
       : cancelKeyboard;
     await ctx.reply(`🧬 Выберите профиль для класса ${currentClassId}:\n${list}\n\nОтправьте ID профиля (например tech) или '-' чтобы сделать общим:`, keyboard);
   } catch (e) {
-    console.error('promptAudienceTrack error', e);
+    logger.error('promptAudienceTrack error', e);
     await ctx.reply('🧬 Введите ID профиля или \'-\' чтобы пропустить:', cancelKeyboard);
   }
 }
@@ -137,7 +138,7 @@ async function promptAudienceSubgroup(ctx) {
       : cancelKeyboard;
     await ctx.reply(`👩‍🏫 Выберите подгруппу (предмет урока: ${subject}):\n${list}\n\nОтправьте ID подгруппы (например belova) или '-' чтобы пропустить. Если подгруппа указана, её предмет должен совпадать с предметом урока.`, keyboard);
   } catch (e) {
-    console.error('promptAudienceSubgroup error', e);
+    logger.error('promptAudienceSubgroup error', e);
     await ctx.reply('👩‍🏫 Введите ID подгруппы или \'-\' чтобы пропустить:', cancelKeyboard);
   }
 }
@@ -174,7 +175,7 @@ async function handleAddAudienceClass(ctx) {
       }
       ctx.wizard.state.audience.classId = found.id;
     } catch (e) {
-      console.error('handleAddAudienceClass error', e);
+      logger.error('handleAddAudienceClass error', e);
       await ctx.reply('❌ Ошибка проверки класса. Попробуйте ещё раз.', cancelKeyboard);
       return;
     }
@@ -232,7 +233,7 @@ async function handleAddAudienceTrack(ctx) {
         }
         ctx.wizard.state.audience.trackId = foundGlobal.id;
       } catch (e) {
-        console.error('handleAddAudienceTrack error', e);
+        logger.error('handleAddAudienceTrack error', e);
         await ctx.reply('❌ Ошибка проверки профиля.', cancelKeyboard);
         return;
       }
@@ -289,7 +290,7 @@ async function handleAddAudienceSubgroup(ctx) {
       ctx.wizard.state.audience.subgroupId = sg.id;
     } catch (e) {
       if (e.message && e.message.startsWith('❌ Подгруппа')) throw e;
-      console.error('handleAddAudienceSubgroup error', e);
+      logger.error('handleAddAudienceSubgroup error', e);
       await ctx.reply('❌ Ошибка проверки подгруппы.', cancelKeyboard);
       return;
     }
@@ -320,7 +321,7 @@ async function handleAddAudienceSubgroup(ctx) {
       await ctx.reply(`❌ Урок уже существует:\n${getDayName(ex.dayOfWeek)}, ${ex.lessonNumber} урок: ${ex.subjectName}\n\nИспользуйте удаление для изменения.`);
       return ctx.wizard.back();
     }
-    console.error('slot check error', e);
+    logger.error('slot check error', e);
   }
 
   if (isEdit) {
@@ -387,7 +388,7 @@ async function handleAddRoom(ctx) {
       }
       return;
     }
-    console.error('Ошибка при добавлении урока:', error);
+    logger.error('Ошибка при добавлении урока:', error);
     await ctx.reply('❌ Произошла ошибка при добавлении урока.');
     return ctx.wizard.back();
   }
@@ -474,7 +475,7 @@ async function handleEditRoom(ctx) {
       }
       return;
     }
-    console.error('Ошибка при редактировании урока:', error);
+    logger.error('Ошибка при редактировании урока:', error);
     await ctx.reply('❌ Произошла ошибка при редактировании урока: ' + error.message, backKeyboard);
     return ctx.wizard.back();
   }
@@ -497,7 +498,7 @@ async function handleDelete(ctx) {
       await ctx.reply('❌ Урок с таким ID не найден.');
       return ctx.wizard.back();
     }
-    console.error('Ошибка при удалении урока:', error);
+    logger.error('Ошибка при удалении урока:', error);
     await ctx.reply('❌ Произошла ошибка при удалении урока: ' + error.message);
     return ctx.wizard.back();
   }
@@ -542,7 +543,7 @@ async function handleBellTime(ctx) {
       await ctx.reply(`❌ ${error.message}`, cancelKeyboard);
       return;
     }
-    console.error('Ошибка при обновлении звонков:', error);
+    logger.error('Ошибка при обновлении звонков:', error);
     await ctx.reply('❌ Произошла ошибка при обновлении звонков: ' + error.message, backKeyboard);
     return ctx.wizard.back();
   }
@@ -577,7 +578,7 @@ async function handleToggleMultiprofile(ctx) {
     await ctx.reply(`🧩 Мульти-профиль: ${next ? 'Вкл' : 'Выкл'}`, backKeyboard);
     return ctx.wizard.back();
   } catch (e) {
-    console.error('handleToggleMultiprofile error', e);
+    logger.error('handleToggleMultiprofile error', e);
     await ctx.reply('❌ Ошибка переключения мульти-профиля.', backKeyboard);
     return ctx.wizard.back();
   }
@@ -596,7 +597,7 @@ async function handleClassList(ctx) {
     // stay on same action to allow add/delete via next message
     ctx.wizard.state.action = 'classes_list';
   } catch (e) {
-    console.error('handleClassList error', e);
+    logger.error('handleClassList error', e);
     await ctx.reply('❌ Ошибка загрузки классов.', backKeyboard);
     return ctx.wizard.back();
   }
@@ -655,7 +656,7 @@ async function handleTrackList(ctx) {
     await ctx.reply(`🧬 Профили:\n${lines.join('\n')}\n\nДля добавления: "<classId> <trackId> <название>"\nПример: 10А tech Тех. профиль\nДля удаления: "<classId> <trackId>"`, backKeyboard);
     ctx.wizard.state.action = 'tracks_list';
   } catch (e) {
-    console.error('handleTrackList error', e);
+    logger.error('handleTrackList error', e);
     await ctx.reply('❌ Ошибка загрузки профилей.', backKeyboard);
     return ctx.wizard.back();
   }
@@ -719,7 +720,7 @@ async function handleSubgroupList(ctx) {
     await ctx.reply(`👩‍🏫 Подгруппы:\n${lines.join('\n')}\n\nДля добавления: "<предмет> <id> <учитель> [classId]"\nПример: английский belova Белова 10А\nДля удаления: отправьте ID подгруппы.`, backKeyboard);
     ctx.wizard.state.action = 'subgroups_list';
   } catch (e) {
-    console.error('handleSubgroupList error', e);
+    logger.error('handleSubgroupList error', e);
     await ctx.reply('❌ Ошибка загрузки подгрупп.', backKeyboard);
     return ctx.wizard.back();
   }
@@ -794,7 +795,7 @@ async function handleStats(ctx) {
     await ctx.reply(`📊 Статистика\n${msg}\n\nАктивных за 24ч: ${summary.active24h}`, backKeyboard);
     return ctx.wizard.back();
   } catch (e) {
-    console.error('handleStats error', e);
+    logger.error('handleStats error', e);
     await ctx.reply('❌ Ошибка загрузки статистики.', backKeyboard);
     return ctx.wizard.back();
   }
@@ -997,7 +998,7 @@ async function handleUserDetail(ctx) {
   try {
     detail = await getUserDetail(userId);
   } catch (e) {
-    console.error('handleUserDetail getUserDetail error', e);
+    logger.error('handleUserDetail getUserDetail error', e);
     await ctx.reply('❌ Ошибка загрузки пользователя.', backKeyboard);
     return;
   }
@@ -1064,7 +1065,7 @@ async function handleShowModes(ctx) {
       },
     });
   } catch (e) {
-    console.error('handleShowModes error', e);
+    logger.error('handleShowModes error', e);
     await ctx.reply('❌ Ошибка загрузки режимов.', backKeyboard);
   }
 }
@@ -1079,7 +1080,7 @@ async function handleToggleHomeworkVisibility(ctx) {
     await toggleHomeworkVisibility();
     await handleShowModes(ctx);
   } catch (e) {
-    console.error('handleToggleHomeworkVisibility error', e);
+    logger.error('handleToggleHomeworkVisibility error', e);
     await ctx.reply('❌ Ошибка переключения режима.', backKeyboard);
   }
 }

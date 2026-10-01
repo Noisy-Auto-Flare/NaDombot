@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { getHomeworkForDate, getHomeworkForWeek, formatHomework, getTagContext, MESSAGE_CHUNK_LIMIT } = require('../utils/scheduleUtils');
 const { getNextWorkDay } = require('../utils/dateUtils');
 const { toggleHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
@@ -148,7 +149,7 @@ async function handleProfile(ctx) {
     ];
     await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });
   } catch (e) {
-    console.error('handleProfile', e.message || e);
+    logger.error('handleProfile', e.message || e);
     await ctx.reply('❌ Ошибка при получении профиля. Попробуйте позже.');
   }
 }
@@ -213,7 +214,7 @@ async function handleProfileToggleScope(ctx) {
     await ctx.reply(nextScope === 'all' ? '👀 Включён режим «Видеть всё»' : '📚 Включён режим «Моё»');
     await handleProfile(ctx);
   } catch (e) {
-    console.error('handleProfileToggleScope', e.message || e);
+    logger.error('handleProfileToggleScope', e.message || e);
     await ctx.reply('❌ Не удалось переключить режим. Попробуйте позже.');
   }
 }
@@ -254,7 +255,7 @@ async function handleProfileReset(ctx) {
       reply_markup: { inline_keyboard: [[{ text: '👋 Выбрать профиль', callback_data: 'select_profile' }], [{ text: '🔙 Меню', callback_data: 'back_to_menu' }]] }
     });
   } catch (e) {
-    console.error('handleProfileReset', e.message || e);
+    logger.error('handleProfileReset', e.message || e);
     await ctx.reply('❌ Не удалось сбросить профиль. Попробуйте позже.');
   }
 }
@@ -299,7 +300,7 @@ async function handleHomeworkTomorrow(ctx) {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
   } catch (error) {
-    console.error('Ошибка при получении домашнего задания:', error);
+    logger.error('Ошибка при получении домашнего задания:', error);
     await ctx.reply('❌ Произошла ошибка при получении домашнего задания. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -348,7 +349,7 @@ async function handleHomeworkWeek(ctx) {
       });
     }
   } catch (error) {
-    console.error('Ошибка при получении домашнего задания на неделю:', error);
+    logger.error('Ошибка при получении домашнего задания на неделю:', error);
     await ctx.reply('❌ Произошла ошибка при получении домашнего задания. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -414,7 +415,7 @@ async function handleCurrentLesson(ctx) {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
   } catch (error) {
-    console.error('Ошибка при получении текущего кабинета:', error);
+    logger.error('Ошибка при получении текущего кабинета:', error);
     await ctx.reply('❌ Не удалось определить текущий урок. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -482,7 +483,7 @@ async function handleHistory(ctx) {
     const { days, offset } = await getHistoryWeek(ctx.from.id, 0);
     await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(offset));
   } catch (error) {
-    console.error('Ошибка при получении истории:', error);
+    logger.error('Ошибка при получении истории:', error);
     await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -502,7 +503,7 @@ async function handleHistoryWeek(ctx) {
     const { days, offset: real } = await getHistoryWeek(ctx.from.id, offset);
     await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(real));
   } catch (error) {
-    console.error('Ошибка при получении истории:', error);
+    logger.error('Ошибка при получении истории:', error);
     await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });
@@ -524,7 +525,7 @@ async function handleHistoryMonth(ctx) {
     const { days } = await getHistoryMonth(ctx.from.id, year, month);
     await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(0));
   } catch (error) {
-    console.error('Ошибка при получении истории:', error);
+    logger.error('Ошибка при получении истории:', error);
     await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
     });

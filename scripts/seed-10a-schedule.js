@@ -6,6 +6,7 @@
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const logger = require('../src/utils/logger');
 const { sequelize } = require('../src/config/database');
 const { Schedule } = require('../src/models');
 const { seedLessonTimes } = require('../src/utils/seedLessonTimes');
@@ -110,20 +111,20 @@ const SCHEDULE_10A = RAW_SCHEDULE.map(r => {
 
 async function run() {
   try { await sequelize.authenticate(); } catch (e) {
-    console.error('DB connect fail', e.message); process.exit(1);
+    logger.error('DB connect fail', e.message); process.exit(1);
   }
   await sequelize.sync();
   await seedLessonTimes();
 
-  console.log(`${DRY ? '[DRY-RUN] ' : ''}Будет upsert ${SCHEDULE_10A.length} уроков 10а ТЕХ профиль (дни 0-4):`);
+  logger.info(`${DRY ? '[DRY-RUN] ' : ''}Будет upsert ${SCHEDULE_10A.length} уроков 10а ТЕХ профиль (дни 0-4):`);
   for (const s of SCHEDULE_10A) {
-    console.log(`  ${['Пн','Вт','Ср','Чт','Пт'][s.dayOfWeek]} ${s.lessonNumber}. ${s.subjectName} — каб. ${s.room}`);
+    logger.info(`  ${['Пн','Вт','Ср','Чт','Пт'][s.dayOfWeek]} ${s.lessonNumber}. ${s.subjectName} — каб. ${s.room}`);
   }
   const LessonTime = require('../src/models/LessonTime');
   const bells = await LessonTime.findAll({ order: [['lessonNumber','ASC']] });
-  console.log(`\nЗвонки (${bells.length}): ${bells.map(b=>`${b.lessonNumber}:${b.startTime}-${b.endTime}`).join(', ')}`);
+  logger.info(`\nЗвонки (${bells.length}): ${bells.map(b=>`${b.lessonNumber}:${b.startTime}-${b.endTime}`).join(', ')}`);
   if (DRY) {
-    console.log('\nЗапусти с --yes чтобы записать в БД (перезапишет существующие уроки)');
+    logger.info('\nЗапусти с --yes чтобы записать в БД (перезапишет существующие уроки)');
     await sequelize.close(); process.exit(0);
   }
   for (const s of SCHEDULE_10A) {
@@ -135,7 +136,7 @@ async function run() {
       await row.update({ subjectName: s.subjectName, room: s.room });
     }
   }
-  console.log('\n✅ Расписание 10а ТЕХ профиль и звонки обновлены. Проверь: /start -> расписание, 🏫 В каком кабинете урок');
+  logger.info('\n✅ Расписание 10а ТЕХ профиль и звонки обновлены. Проверь: /start -> расписание, 🏫 В каком кабинете урок');
   await sequelize.close(); process.exit(0);
 }
-run().catch(e=>{ console.error(e); process.exit(1); });
+run().catch(e=>{ logger.error(e); process.exit(1); });

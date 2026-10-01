@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { Scenes } = require('telegraf');
 const { getAvailableClasses, getAvailableTracks, getAvailableSubgroups, setUserProfile, getUserProfile } = require('../utils/userProfile');
 const { Track, Subgroup } = require('../models');
@@ -68,7 +69,7 @@ async function saveScopeAll(ctx) {
   try {
     await setUserProfile(ctx.from.id, { classId, trackId: null, subgroupId: null, scope: 'all' });
   } catch (e) {
-    console.error('saveScopeAll', e.message || e);
+    logger.error('saveScopeAll', e.message || e);
     await ctx.reply('❌ Не удалось сохранить режим. Попробуйте позже через /profile');
     return ctx.scene.leave();
   }
@@ -119,7 +120,7 @@ async function finalizeProfile(ctx, subgroupId) {
   try {
     await setUserProfile(ctx.from.id, { classId: saveClassId, trackId: saveTrackId, subgroupId: saveSubgroupId, scope: saveScope });
   } catch (e) {
-    console.error('finalizeProfile', e.message || e);
+    logger.error('finalizeProfile', e.message || e);
     await ctx.reply('❌ Не удалось сохранить профиль. Попробуйте позже через /profile');
     return ctx.scene.leave();
   }
@@ -183,7 +184,7 @@ async function showOwnNextStep(ctx) {
     await ctx.reply('Выберите профиль', { reply_markup: { inline_keyboard: kb } });
     goTrackStep();
   } catch (e) {
-    console.error('showOwnNextStep error', e.message || e);
+    logger.error('showOwnNextStep error', e.message || e);
     await ctx.reply('❌ Ошибка при загрузке профилей. Попробуйте позже.');
     return ctx.scene.leave();
   }
@@ -233,7 +234,7 @@ const selectProfileScene = new Scenes.WizardScene(
           await ctx.reply('👋 Выберите класс', { reply_markup: { inline_keyboard: kb } });
           return ctx.wizard.next();
         } catch (e) {
-          console.error('selectProfile step0 edit class', e.message || e);
+          logger.error('selectProfile step0 edit class', e.message || e);
           await ctx.reply('❌ Ошибка при загрузке классов. Попробуйте позже.');
           return ctx.scene.leave();
         }
@@ -259,7 +260,7 @@ const selectProfileScene = new Scenes.WizardScene(
             ctx.wizard.state.editMode = null;
             return ctx.wizard.next();
           } catch (e) {
-            console.error('selectProfile edit track fallback', e.message || e);
+            logger.error('selectProfile edit track fallback', e.message || e);
             await ctx.reply('❌ Ошибка при загрузке классов. Попробуйте позже.');
             return ctx.scene.leave();
           }
@@ -282,7 +283,7 @@ const selectProfileScene = new Scenes.WizardScene(
             } catch (_e) { void _e; }
             return ctx.scene.leave();
           } catch (e) {
-            console.error('edit track no tracks finalize', e.message || e);
+            logger.error('edit track no tracks finalize', e.message || e);
             await ctx.reply('❌ Не удалось сохранить профиль. Попробуйте позже через /profile');
             return ctx.scene.leave();
           }
@@ -317,7 +318,7 @@ const selectProfileScene = new Scenes.WizardScene(
             ctx.wizard.state.editMode = null;
             return ctx.wizard.next();
           } catch (e) {
-            console.error('selectProfile edit subgroup fallback', e.message || e);
+            logger.error('selectProfile edit subgroup fallback', e.message || e);
             await ctx.reply('❌ Ошибка при загрузке классов. Попробуйте позже.');
             return ctx.scene.leave();
           }
@@ -334,7 +335,7 @@ const selectProfileScene = new Scenes.WizardScene(
           }
           return;
         } catch (e) {
-          console.error('selectProfile edit subgroup', e.message || e);
+          logger.error('selectProfile edit subgroup', e.message || e);
           await ctx.reply('❌ Ошибка при загрузке подгрупп. Попробуйте позже.');
           return ctx.scene.leave();
         }
@@ -356,7 +357,7 @@ const selectProfileScene = new Scenes.WizardScene(
       await ctx.reply('👋 Выберите класс', { reply_markup: { inline_keyboard: kb } });
       return ctx.wizard.next();
     } catch (e) {
-      console.error('selectProfile step0', e.message || e);
+      logger.error('selectProfile step0', e.message || e);
       await ctx.reply('❌ Ошибка при загрузке классов. Попробуйте позже.');
       return ctx.scene.leave();
     }
@@ -459,7 +460,7 @@ const selectProfileScene = new Scenes.WizardScene(
             } catch (_e) { void _e; }
             return ctx.scene.leave();
           } catch (e) {
-            console.error('edit track finalize', e.message || e);
+            logger.error('edit track finalize', e.message || e);
             await ctx.reply('❌ Не удалось сохранить профиль. Попробуйте позже через /profile');
             return ctx.scene.leave();
           }
@@ -471,7 +472,7 @@ const selectProfileScene = new Scenes.WizardScene(
           await ctx.reply('У кого английский?', { reply_markup: { inline_keyboard: kb } });
           return ctx.wizard.next();
         } catch (e) {
-          console.error('select_track error', e.message || e);
+          logger.error('select_track error', e.message || e);
           await ctx.reply('❌ Ошибка при загрузке подгрупп. Попробуйте позже.');
           return ctx.scene.leave();
         }
@@ -510,7 +511,7 @@ const selectProfileScene = new Scenes.WizardScene(
               } catch (_e) { void _e; }
               return ctx.scene.leave();
             } catch (e) {
-              console.error('edit subgroup finalize', e.message || e);
+              logger.error('edit subgroup finalize', e.message || e);
               await ctx.reply('❌ Не удалось сохранить профиль. Попробуйте позже через /profile');
               return ctx.scene.leave();
             }

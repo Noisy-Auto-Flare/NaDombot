@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { Op } = require('sequelize');
 const { Class, Track, Subgroup, UserProfile, User } = require('../models');
 const { isMultiprofileEnabled: _isMultiprofileEnabled } = require('./settings');
@@ -21,7 +22,7 @@ async function getUserProfile(userId) {
     }
     return profile || null;
   } catch (e) {
-    console.error('getUserProfile', e.message || e);
+    logger.error('getUserProfile', e.message || e);
     return null;
   }
 }
@@ -71,7 +72,7 @@ async function setUserProfile(userId, { classId, trackId, subgroupId, scope }) {
       version
     });
   } catch (e) {
-    console.error('setUserProfile upsert', e.message || e);
+    logger.error('setUserProfile upsert', e.message || e);
     // fallback: create or update manually
     if (existing) {
       await existing.update({ classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: finalScope, version });
@@ -94,7 +95,7 @@ async function setUserProfile(userId, { classId, trackId, subgroupId, scope }) {
     try {
       await User.update({ classId: normClassId, trackId: finalTrackId, subgroupId: finalSubgroupId }, { where: { userId } });
     } catch (_e2) {
-      console.error('setUserProfile User denorm', e.message || e);
+      logger.error('setUserProfile User denorm', e.message || e);
     }
   }
 
@@ -109,7 +110,7 @@ async function getAvailableClasses() {
   try {
     return await Class.findAll({ where: { enabled: true }, order: [['grade', 'ASC'], ['letter', 'ASC']] });
   } catch (e) {
-    console.error('getAvailableClasses', e.message || e);
+    logger.error('getAvailableClasses', e.message || e);
     return [];
   }
 }
@@ -138,7 +139,7 @@ async function getAvailableTracks(classId) {
     const tracks = await Track.findAll({ where: { classId }, order: [['name', 'ASC']] });
     return tracks || [];
   } catch (e) {
-    console.error('getAvailableTracks', e.message || e);
+    logger.error('getAvailableTracks', e.message || e);
     return [];
   }
 }
@@ -163,7 +164,7 @@ async function getAvailableSubgroups(subject = 'английский', classId =
       return subjectsMatch(s.subject, subj);
     });
   } catch (e) {
-    console.error('getAvailableSubgroups', e.message || e);
+    logger.error('getAvailableSubgroups', e.message || e);
     return [];
   }
 }
@@ -181,7 +182,7 @@ async function setUserScope(userId, scope) {
   try {
     await profile.update({ scope, version: (profile.version || 1) + 1 });
   } catch (e) {
-    console.error('setUserScope update', e.message || e);
+    logger.error('setUserScope update', e.message || e);
     await UserProfile.update({ scope }, { where: { userId } });
   }
   return getUserProfile(userId);

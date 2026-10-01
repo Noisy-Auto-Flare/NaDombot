@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { Homework, UserEvent } = require('../models');
 const { Op } = require('sequelize');
 
@@ -25,12 +26,12 @@ async function cleanupOldHomeworks() {
     });
 
     if (deletedCount > 0) {
-      console.log(`✅ Удалено ${deletedCount} старых домашних заданий (до ${todayString})`);
+      logger.info(`✅ Удалено ${deletedCount} старых домашних заданий (до ${todayString})`);
     }
 
     return deletedCount;
   } catch (error) {
-    console.error('❌ Ошибка при очистке старых домашних заданий:', error);
+    logger.error('❌ Ошибка при очистке старых домашних заданий:', error);
     return 0;
   }
 }
@@ -66,12 +67,12 @@ async function cleanupOldUserEvents(days = USER_EVENTS_RETENTION_DAYS) {
     });
 
     if (deletedCount > 0) {
-      console.log(`✅ Ретеншн user_events: удалено ${deletedCount} событий старше ${days} дней`);
+      logger.info(`✅ Ретеншн user_events: удалено ${deletedCount} событий старше ${days} дней`);
     }
 
     return deletedCount;
   } catch (error) {
-    console.error('❌ Ошибка при ретеншне user_events:', error);
+    logger.error('❌ Ошибка при ретеншне user_events:', error);
     return 0;
   }
 }
@@ -85,7 +86,7 @@ async function cleanupOldUserEvents(days = USER_EVENTS_RETENTION_DAYS) {
 function startUserEventsRetentionJob() {
   if (userEventsRetentionTimer) return null;
   userEventsRetentionTimer = setInterval(() => {
-    cleanupOldUserEvents().catch((e) => console.error('❌ Ретеншн user_events (interval):', e.message || e));
+    cleanupOldUserEvents().catch((e) => logger.error('❌ Ретеншн user_events (interval):', e.message || e));
   }, USER_EVENTS_RETENTION_INTERVAL_MS);
   // Не держать процесс только ради джобы (тесты/скрипты завершаются сами)
   if (userEventsRetentionTimer && typeof userEventsRetentionTimer.unref === 'function') {

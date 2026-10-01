@@ -19,6 +19,7 @@
  */
 const path = require('path');
 const fs = require('fs');
+const logger = require('../src/utils/logger');
 
 function parseArgs(argv) {
   const out = { db: null, dump: null };
@@ -51,7 +52,7 @@ const EXPECTED_TABLES = [
 async function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
-    console.log('Usage: node scripts/check-boot.js [--db PATH] [--dump FILE]');
+    logger.info('Usage: node scripts/check-boot.js [--db PATH] [--dump FILE]');
     process.exit(0);
   }
   if (args.db) {
@@ -63,11 +64,11 @@ async function main() {
   const passes = [];
   function ok(name) {
     passes.push(name);
-    console.log(`✅ ${name}`);
+    logger.info(`✅ ${name}`);
   }
   function fail(name, detail) {
     failures.push(name);
-    console.log(`❌ ${name}${detail ? ` — ${detail}` : ''}`);
+    logger.error(`❌ ${name}${detail ? ` — ${detail}` : ''}`);
   }
 
   // Перехватываем console.* на время syncDatabase для grep-маркеров
@@ -271,6 +272,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(`❌ check-boot упал: ${e.stack || e.message}`);
+  logger.error(`❌ check-boot упал: ${e.stack || e.message}`);
   process.exit(1);
 });

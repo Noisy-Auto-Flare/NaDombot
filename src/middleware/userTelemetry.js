@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { User, UserEvent } = require('../models');
 
 /**
@@ -74,11 +75,11 @@ async function userTelemetry(ctx, next) {
           status
         });
       } catch (e) {
-        console.error('UserEvent', e.message);
+        logger.error('UserEvent', e.message);
       }
     }
   } catch (e) {
-    console.error('userTelemetry', e.message || e);
+    logger.error('userTelemetry', e.message || e);
     // next() мог не вызваться из-за падения upsert — пробуем пропустить дальше один раз
     if (!nextCalled) {
       return next();

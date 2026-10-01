@@ -1,4 +1,5 @@
 const bot = require('./config/bot');
+const logger = require('./utils/logger');
 const { testConnection, syncDatabase } = require('./config/database');
 const { Scenes } = require('telegraf');
 const { cleanupOldUserEvents, startUserEventsRetentionJob } = require('./utils/cleanup');
@@ -126,7 +127,7 @@ bot.action('profile_toggle_scope', handleProfileToggleScope);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {
-  console.error('Ошибка в боте:', err);
+  logger.error('Ошибка в боте:', err);
   ctx.reply('❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору.');
 });
 
@@ -136,7 +137,7 @@ async function startBot() {
     // Проверяем подключение к БД
     const dbConnected = await testConnection();
     if (!dbConnected) {
-      console.error('Не удалось подключиться к базе данных. Проверьте настройки.');
+      logger.error('Не удалось подключиться к базе данных. Проверьте настройки.');
       process.exit(1);
     }
 
@@ -150,14 +151,14 @@ async function startBot() {
 
     // Запускаем бота
     await bot.launch();
-    console.log('✅ Бот успешно запущен!');
+    logger.info('✅ Бот успешно запущен!');
 
     // Graceful shutdown
     process.once('SIGINT', () => bot.stop('SIGINT'));
     process.once('SIGTERM', () => bot.stop('SIGTERM'));
   } catch (error) {
-    console.error('Ошибка при запуске бота:', error);
-    console.error('Stack:', error.stack);
+    logger.error('Ошибка при запуске бота:', error);
+    logger.error('Stack:', error.stack);
     process.exit(1);
   }
 }

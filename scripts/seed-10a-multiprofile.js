@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const logger = require('../src/utils/logger');
 const { sequelize } = require('../src/config/database');
 const { syncDatabase } = require('../src/config/database');
 const { Schedule, Class, Track, Subgroup, Setting } = require('../src/models');
@@ -118,15 +119,15 @@ async function run(){
   await syncDatabase();
   await ensureBase();
   if (REPLACE) {
-    console.log('Cleaning old 10А schedules (--replace)...');
+    logger.info('Cleaning old 10А schedules (--replace)...');
     const { Homework } = require('../src/models');
     const oldIds = (await Schedule.findAll({where:{classId:'10А'}, attributes:['id'], raw:true})).map(r=>r.id);
-    if(oldIds.length){ await Homework.destroy({where:{scheduleId: oldIds}}); console.log('  Deleted', oldIds.length, 'homework refs'); }
+    if(oldIds.length){ await Homework.destroy({where:{scheduleId: oldIds}}); logger.info('  Deleted', oldIds.length, 'homework refs'); }
     await Schedule.destroy({where:{classId:'10А'}});
-    console.log('Inserting', SCHEDULE.length, 'rows...');
+    logger.info('Inserting', SCHEDULE.length, 'rows...');
     for(const s of SCHEDULE) await Schedule.create(s);
   } else {
-    console.log('Upserting 10А schedules (без --replace: только upsert, без destroy)...');
+    logger.info('Upserting 10А schedules (без --replace: только upsert, без destroy)...');
     let created = 0; let updated = 0; let skipped = 0;
     for(const s of SCHEDULE) {
       const res = await upsertScheduleRow(s);
@@ -134,18 +135,18 @@ async function run(){
       else if (res === 'updated') updated++;
       else skipped++;
     }
-    console.log(`  created=${created} updated=${updated} skipped=${skipped} (всего в сиде: ${SCHEDULE.length})`);
+    logger.info(`  created=${created} updated=${updated} skipped=${skipped} (всего в сиде: ${SCHEDULE.length})`);
   }
   const count = await Schedule.count({where:{classId:'10А'}});
-  console.log('✅ Seed done. 10А schedules:', count);
+  logger.info('✅ Seed done. 10А schedules:', count);
   const classes = await Class.findAll({raw:true});
   const tracks = await Track.findAll({raw:true});
   const subs = await Subgroup.findAll({raw:true});
-  console.log('Classes:', classes.map(c=>c.id));
-  console.log('Tracks:', tracks.map(t=>t.classId+':'+t.id));
-  console.log('Subgroups:', subs.map(s=>s.id+':'+(s.teacher || s.name)+'/'+(s.subject != null ? s.subject : 'any')));
+  logger.info('Classes:', classes.map(c=>c.id));
+  logger.info('Tracks:', tracks.map(t=>t.classId+':'+t.id));
+  logger.info('Subgroups:', subs.map(s=>s.id+':'+(s.teacher || s.name)+'/'+(s.subject != null ? s.subject : 'any')));
   const mp = await Setting.findByPk('multiprofile_enabled');
-  console.log('multiprofile_enabled =', mp?.value);
+  logger.info('multiprofile_enabled =', mp?.value);
   await sequelize.close(); process.exit(0);
 }
-run().catch(e=>{console.error(e); process.exit(1);});
+run().catch(e=>{logger.error(e); process.exit(1);});

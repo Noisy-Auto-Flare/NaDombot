@@ -13,6 +13,7 @@
  */
 
 const path = require('path');
+const logger = require('../src/utils/logger');
 const { createInterface } = require('readline');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -55,7 +56,7 @@ function pickKnownFields(Model, label, rows) {
       if (allowed.has(key)) {
         out[key] = row[key];
       } else {
-        console.warn(`⚠️ import-db: неизвестное поле ${label}.${key} пропущено`);
+        logger.warn(`⚠️ import-db: неизвестное поле ${label}.${key} пропущено`);
       }
     }
     return out;
@@ -69,7 +70,7 @@ async function run() {
   try {
     raw = await readStdin();
   } catch (e) {
-    console.error('Не удалось прочитать stdin:', e.message);
+    logger.error('Не удалось прочитать stdin:', e.message);
     process.exit(1);
   }
 
@@ -77,7 +78,7 @@ async function run() {
   try {
     data = JSON.parse(raw);
   } catch (e) {
-    console.error('Некорректный JSON:', e.message);
+    logger.error('Некорректный JSON:', e.message);
     process.exit(1);
   }
 
@@ -92,19 +93,19 @@ async function run() {
   const userProfiles = Array.isArray(data.userProfiles) ? data.userProfiles : [];
   const userEvents = Array.isArray(data.userEvents) ? data.userEvents : [];
 
-  console.error(
+  logger.error(
     `Будет импортировано: расписание ${schedules.length} записей, домашние задания ${homeworks.length} записей, звонки ${lessonTimes.length}, настройки ${settings.length}, классы ${classes.length}, треки ${tracks.length}, подгруппы ${subgroups.length}, пользователи ${users.length}, профили ${userProfiles.length}, события ${userEvents.length}.`
   );
 
   if (!doImport) {
-    console.error('Запустите с флагом --yes, чтобы выполнить импорт.');
+    logger.error('Запустите с флагом --yes, чтобы выполнить импорт.');
     process.exit(0);
   }
 
   try {
     await sequelize.authenticate();
   } catch (e) {
-    console.error('Ошибка подключения к БД:', e.message);
+    logger.error('Ошибка подключения к БД:', e.message);
     process.exit(1);
   }
 
@@ -171,7 +172,7 @@ async function run() {
     await t.commit();
   } catch (e) {
     await t.rollback();
-    console.error('Ошибка импорта:', e.message);
+    logger.error('Ошибка импорта:', e.message);
     process.exit(1);
   }
 
@@ -182,15 +183,15 @@ async function run() {
     // lesson_times использует lessonNumber PK (1-10) — sequence не нужен
     // classes/tracks/subgroups — STRING PK, без sequence
   } catch (e) {
-    console.warn('Не удалось сбросить sqlite_sequence:', e.message || e);
+    logger.warn('Не удалось сбросить sqlite_sequence:', e.message || e);
   }
 
-  console.error('Импорт завершён.');
+  logger.error('Импорт завершён.');
   await sequelize.close();
   process.exit(0);
 }
 
 run().catch((e) => {
-  console.error(e);
+  logger.error(e);
   process.exit(1);
 });

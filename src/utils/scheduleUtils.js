@@ -5,6 +5,7 @@ const { getMoscowDayOfWeek } = require('./moscowTime');
 const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
 const { subjectsMatch } = require('./subjectNormalizer');
 const { isVisibleWithScope, buildAudienceTag } = require('./audience');
+const logger = require('./logger');
 
 /**
  * Лимит длины одного сообщения Telegram для чанкинга merged-view (P2: 4000, не 4096).
@@ -215,6 +216,9 @@ function mergeHomeworkBySchedule(homeworks) {
     const list = bySchedule.get(hw.scheduleId);
     if (!list.includes(text)) list.push(text);
   }
+  logger.debug(
+    `merge: homeworks=${(homeworks || []).length} schedules=${bySchedule.size} texts=${[...bySchedule.values()].reduce((n, l) => n + l.length, 0)}`
+  );
   return bySchedule;
 }
 

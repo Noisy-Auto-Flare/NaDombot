@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { Scenes } = require('telegraf');
 const { Homework } = require('../models');
 const { findNextLesson, getTagContext } = require('../utils/scheduleUtils');
@@ -124,7 +125,7 @@ async function proceedWithSchedule(ctx, schedule) {
   try {
     rows = await fetchExistingHomework(schedule.id, dateStr);
   } catch (e) {
-    console.error('fetchExistingHomework', e.message || e);
+    logger.error('fetchExistingHomework', e.message || e);
     rows = [];
   }
   if (!rows || rows.length === 0) {
@@ -222,7 +223,7 @@ const addHomeworkScene = new Scenes.WizardScene(
     try {
       quickRows = await getRecentLessonRows({ limit: 4, now: new Date() });
     } catch (e) {
-      console.error('quick rows error', e);
+      logger.error('quick rows error', e);
       quickRows = [];
     }
     const keyboard = [];
@@ -254,7 +255,7 @@ const addHomeworkScene = new Scenes.WizardScene(
         try {
           row = await scheduleService.findById(id);
         } catch (e) {
-          console.error('hw_pick lookup error', e);
+          logger.error('hw_pick lookup error', e);
           row = null;
         }
         if (!row || !(ctx.wizard.state.pendingPick || []).includes(id)) {
@@ -271,7 +272,7 @@ const addHomeworkScene = new Scenes.WizardScene(
         try {
           row = await scheduleService.findById(id);
         } catch (e) {
-          console.error('quick lookup error', e);
+          logger.error('quick lookup error', e);
           row = null;
         }
         if (!row) {
@@ -318,7 +319,7 @@ const addHomeworkScene = new Scenes.WizardScene(
     try {
       await resolveSubject(ctx, subjectName);
     } catch (error) {
-      console.error('Ошибка при поиске урока:', error);
+      logger.error('Ошибка при поиске урока:', error);
       await ctx.reply('❌ Произошла ошибка при поиске урока. Попробуйте позже.', {
         reply_markup: {
           inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
@@ -415,7 +416,7 @@ const addHomeworkScene = new Scenes.WizardScene(
         });
         return;
       } catch (error) {
-        console.error('Ошибка при замене домашнего задания:', error);
+        logger.error('Ошибка при замене домашнего задания:', error);
         await ctx.reply('❌ Произошла ошибка при замене домашнего задания. Попробуйте позже.', {
           reply_markup: {
             inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
@@ -454,7 +455,7 @@ const addHomeworkScene = new Scenes.WizardScene(
         }
       );
     } catch (error) {
-      console.error('Ошибка при сохранении домашнего задания:', error);
+      logger.error('Ошибка при сохранении домашнего задания:', error);
       await ctx.reply('❌ Произошла ошибка при сохранении домашнего задания. Попробуйте позже.', {
         reply_markup: {
           inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]

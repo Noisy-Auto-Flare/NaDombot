@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('./logger');
 const { Op } = require('sequelize');
 
 /**
@@ -242,10 +243,10 @@ async function syncAudienceCatalog(options = {}) {
     catalog = readAudienceFile(configPath);
   } catch (e) {
     if (e && e.code === 'ENOENT') {
-      console.warn(`⚠️ audience.json не найден (${configPath}) — работаем с каталогом из БД`);
+      logger.warn(`⚠️ audience.json не найден (${configPath}) — работаем с каталогом из БД`);
       return { status: 'fallback-missing', reason: 'missing' };
     }
-    console.error(`❌ audience.json: ${e.message} — работаем со старым каталогом из БД`);
+    logger.error(`❌ audience.json: ${e.message} — работаем со старым каталогом из БД`);
     return { status: 'fallback-invalid', reason: e.message };
   }
 
@@ -277,10 +278,10 @@ async function syncAudienceCatalog(options = {}) {
     const missing = existing.map((r) => r.id).filter((id) => !fileSubIds.includes(id));
     if (missing.length) {
       await Subgroup.update({ active: false }, { where });
-      console.log(`✅ audience.json: деактивировано подгрупп (нет в файле): ${missing.length} (${missing.join(',')})`);
+      logger.info(`✅ audience.json: деактивировано подгрупп (нет в файле): ${missing.length} (${missing.join(',')})`);
     }
   } catch (deErr) {
-    console.warn('⚠️ audience.json: деактивация отсутствующих подгрупп пропущена:', deErr.message || deErr);
+    logger.warn('⚠️ audience.json: деактивация отсутствующих подгрупп пропущена:', deErr.message || deErr);
   }
   try {
     const fileClassIds = catalog.classes.map((c) => c.id);
@@ -289,17 +290,17 @@ async function syncAudienceCatalog(options = {}) {
     if (missingClasses.length) {
       const where = fileClassIds.length ? { id: { [Op.notIn]: fileClassIds } } : {};
       await Class.update({ enabled: false }, { where });
-      console.log(`✅ audience.json: деактивировано классов (нет в файле): ${missingClasses.length} (${missingClasses.join(',')})`);
+      logger.info(`✅ audience.json: деактивировано классов (нет в файле): ${missingClasses.length} (${missingClasses.join(',')})`);
     }
   } catch (deErr) {
-    console.warn('⚠️ audience.json: деактивация отсутствующих классов пропущена:', deErr.message || deErr);
+    logger.warn('⚠️ audience.json: деактивация отсутствующих классов пропущена:', deErr.message || deErr);
   }
 
   await Setting.upsert({ key: TAGS_TEMPLATE_KEY, value: catalog.tags.template });
   await Setting.upsert({ key: TAGS_SHOW_CLASS_KEY, value: catalog.tags.showClass ? '1' : '0' });
   await Setting.upsert({ key: TAGS_MAX_SEGMENTS_KEY, value: String(catalog.tags.maxSegments) });
 
-  console.log(
+  logger.info(
     `✅ audience.json: каталог обновлён (классов: ${catalog.classes.length}, треков: ${catalog.tracks.length}, подгрупп: ${catalog.subgroups.length})`
   );
   return {

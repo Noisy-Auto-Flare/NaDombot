@@ -14,6 +14,7 @@ const path = require('path');
 
 // .env и конфиг БД — относительно корня проекта (родитель scripts/)
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const logger = require('../src/utils/logger');
 
 const { sequelize } = require('../src/config/database');
 const { Schedule, Homework, LessonTime, Setting } = require('../src/models');
@@ -23,7 +24,7 @@ async function run() {
   try {
     await sequelize.authenticate();
   } catch (e) {
-    console.error('Ошибка подключения к БД:', e.message);
+    logger.error('Ошибка подключения к БД:', e.message);
     process.exit(1);
   }
 
@@ -58,6 +59,6 @@ async function run() {
 }
 
 run().catch((e) => {
-  console.error(e);
+  logger.error(e);
   process.exit(1);
 });

@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const { Setting } = require('../models');
 const { parseHHMM } = require('./moscowTime');
 
@@ -37,7 +38,7 @@ async function getQuickPickThreshold() {
       return DEFAULT_THRESHOLD;
     }
   } catch (err) {
-    console.error('Ошибка при получении порога быстрых кнопок:', err);
+    logger.error('Ошибка при получении порога быстрых кнопок:', err);
     return DEFAULT_THRESHOLD;
   }
 }

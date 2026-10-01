@@ -1,3 +1,4 @@
+const logger = require('../../src/utils/logger');
 /**
  * Одноразовая миграция данных: удалить лишнюю подгруппу ivanova.
  * Вынесено из syncDatabase (P0: в boot — только find-or-create/skip, деструктив — только ledger).
@@ -12,7 +13,7 @@ async function up({ sequelize }) {
     }).catch(() => null);
     if (found && found.length) {
       await sequelize.query("DELETE FROM subgroups WHERE id='ivanova'");
-      console.log('✅ Миграция 001: удалена лишняя подгруппа ivanova');
+      logger.info('✅ Миграция 001: удалена лишняя подгруппа ivanova');
     }
   } catch (_e) {
     void _e;
@@ -34,7 +35,7 @@ async function up({ sequelize }) {
           await sequelize.query(`DELETE FROM homeworks WHERE scheduleId IN (${list})`).catch(() => []);
         }
         await sequelize.query("DELETE FROM schedules WHERE subgroupId='ivanova'");
-        console.log(`✅ Миграция 001: удалены ${ids.length} расписаний с ivanova`);
+        logger.info(`✅ Миграция 001: удалены ${ids.length} расписаний с ivanova`);
       }
     }
   } catch (_e) {

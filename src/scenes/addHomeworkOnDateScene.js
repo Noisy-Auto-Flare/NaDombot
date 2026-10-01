@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { Scenes } = require('telegraf');
 const { Homework } = require('../models');
 const scheduleService = require('../services/scheduleService');
@@ -108,7 +109,7 @@ async function proceedWithScheduleDate(ctx, schedule, date) {
   try {
     rows = await fetchExistingHomework(schedule.id, dateStr);
   } catch (e) {
-    console.error('fetchExistingHomework', e.message || e);
+    logger.error('fetchExistingHomework', e.message || e);
     rows = [];
   }
   if (!rows || rows.length === 0) {
@@ -175,7 +176,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     try {
       quickRows = await getRecentLessonRows({ limit: 4, now: new Date() });
     } catch (e) {
-      console.error('quick rows error', e);
+      logger.error('quick rows error', e);
       quickRows = [];
     }
     const keyboard = [];
@@ -219,7 +220,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         try {
           row = await scheduleService.findById(id);
         } catch (e) {
-          console.error('quick lookup error', e);
+          logger.error('quick lookup error', e);
           row = null;
         }
         if (!row) {
@@ -267,7 +268,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           );
           return;
         } catch (error) {
-          console.error('Ошибка при поиске предмета:', error);
+          logger.error('Ошибка при поиске предмета:', error);
           await ctx.reply('❌ Произошла ошибка при поиске предмета. Попробуйте позже.', {
             reply_markup: {
               inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
@@ -301,7 +302,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           await showDateVariantPicker(ctx, isoDate, matching);
           return;
         } catch (error) {
-          console.error('Ошибка при уточнении варианта:', error);
+          logger.error('Ошибка при уточнении варианта:', error);
           await ctx.reply('❌ Произошла ошибка. Попробуйте позже.');
           return;
         }
@@ -328,7 +329,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           await proceedWithScheduleDate(ctx, schedule, date);
           return;
         } catch (error) {
-          console.error('Ошибка при выборе варианта:', error);
+          logger.error('Ошибка при выборе варианта:', error);
           await ctx.reply('❌ Произошла ошибка. Попробуйте позже.');
           return;
         }
@@ -380,7 +381,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           await proceedWithScheduleDate(ctx, schedule, date);
           return;
         } catch (error) {
-          console.error('Ошибка при выборе даты:', error);
+          logger.error('Ошибка при выборе даты:', error);
           await ctx.answerCbQuery();
           await ctx.reply('❌ Произошла ошибка. Попробуйте позже.', {
             reply_markup: {
@@ -459,7 +460,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       // Остаёмся на этом же шаге — ждём callback с выбором даты
       return;
     } catch (error) {
-      console.error('Ошибка при поиске предмета:', error);
+      logger.error('Ошибка при поиске предмета:', error);
       await ctx.reply('❌ Произошла ошибка при поиске предмета. Попробуйте позже.', {
         reply_markup: {
           inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
@@ -553,7 +554,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         });
         return;
       } catch (error) {
-        console.error('Ошибка при замене домашнего задания:', error);
+        logger.error('Ошибка при замене домашнего задания:', error);
         await ctx.reply('❌ Произошла ошибка при замене домашнего задания. Попробуйте позже.', {
           reply_markup: {
             inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
@@ -593,7 +594,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         }
       );
     } catch (error) {
-      console.error('Ошибка при сохранении домашнего задания:', error);
+      logger.error('Ошибка при сохранении домашнего задания:', error);
       await ctx.reply('❌ Произошла ошибка при сохранении домашнего задания. Попробуйте позже.', {
         reply_markup: {
           inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]

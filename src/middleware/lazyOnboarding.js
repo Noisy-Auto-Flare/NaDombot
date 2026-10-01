@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { isMultiprofileEnabled } = require('../utils/settings');
 const { getUserProfile } = require('../utils/userProfile');
 
@@ -27,22 +28,32 @@ async function lazyOnboarding(ctx, next) {
     if (text.startsWith('/profile')) return next();
 
     const enabled = await isMultiprofileEnabled();
-    if (!enabled) return next();
+    if (!enabled) {
+      logger.debug('lazyOnboarding skipped: multiprofile disabled');
+      return next();
+    }
 
     const profile = await getUserProfile(ctx.from.id);
-    if (profile) return next();
+    if (profile) {
+      logger.debug('lazyOnboarding skipped: profile exists');
+      return next();
+    }
 
     // нет профиля → онбординг (ctx.scene доступен только после stage.middleware)
-    if (!ctx.scene || !ctx.scene.enter) return next();
+    if (!ctx.scene || !ctx.scene.enter) {
+      logger.debug('lazyOnboarding skipped: no scene');
+      return next();
+    }
+    logger.debug('lazyOnboarding triggered: no profile, entering selectProfile');
     try {
       await ctx.scene.enter('selectProfile');
     } catch (e) {
-      console.error('lazyOnboarding enter', e.message || e);
+      logger.error('lazyOnboarding enter', e.message || e);
       return next();
     }
     return; // прерываем next()
   } catch (e) {
-    console.error('lazyOnboarding', e.message || e);
+    logger.error('lazyOnboarding', e.message || e);
     return next();
   }
 }
