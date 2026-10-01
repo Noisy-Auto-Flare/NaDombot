@@ -205,10 +205,10 @@ async function main() {
       "SELECT value FROM settings WHERE key='schema_version'",
       { type: QueryTypes.SELECT }
     );
-    if (sv[0] && sv[0].value === 'p0-baseline') ok(`schema_version='p0-baseline'`);
-    else fail(`schema_version='p0-baseline'`, sv[0] ? `value=${sv[0].value}` : 'строки нет');
+    if (sv[0] && sv[0].value === 'p1-subgroup-v2') ok(`schema_version='p1-subgroup-v2'`);
+    else fail(`schema_version='p1-subgroup-v2'`, sv[0] ? `value=${sv[0].value}` : 'строки нет');
   } catch (e) {
-    fail(`schema_version='p0-baseline'`, e.message);
+    fail(`schema_version='p1-subgroup-v2'`, e.message);
   }
 
   // --- 5. Маркер запуска бота (D8): строка должна быть в коде boot-пути ---

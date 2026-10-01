@@ -133,27 +133,23 @@ async function getAvailableTracks(classId) {
 }
 
 /**
- * Список подгрупп по предмету.
+ * Список подгрупп по предмету (P1 v2).
+ * Подгруппа с `subject=null` годится для любого предмета — попадает в любой список.
  * @param {string} [subject='английский']
  * @param {string|null} [classId=null]
  * @returns {Promise<Array<import('../models/Subgroup')>>}
  */
 async function getAvailableSubgroups(subject = 'английский', classId = null) {
+  const { subjectsMatch } = require('./subjectNormalizer');
   const subj = typeof subject === 'string' ? subject.trim() : 'английский';
   try {
-    if (classId) {
-      return await Subgroup.findAll({
-        where: {
-          subject: subj,
-          active: true,
-          [Op.or]: [{ classId: null }, { classId }]
-        },
-        order: [['teacherName', 'ASC']]
-      });
-    }
-    return await Subgroup.findAll({
-      where: { subject: subj, active: true },
-      order: [['teacherName', 'ASC']]
+    const where = { active: true };
+    if (classId) where[Op.or] = [{ classId: null }, { classId }];
+    const all = await Subgroup.findAll({ where, order: [['teacher', 'ASC']] });
+    // subject=null → любой предмет; иначе subjectsMatch (регистр/ё/первое слово)
+    return (all || []).filter((s) => {
+      if (s.subject == null || String(s.subject).trim() === '') return true;
+      return subjectsMatch(s.subject, subj);
     });
   } catch (e) {
     console.error('getAvailableSubgroups', e.message || e);

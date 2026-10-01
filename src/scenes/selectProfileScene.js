@@ -26,7 +26,7 @@ function buildTrackKeyboard(tracks) {
 function buildSubgroupKeyboard(subgroups) {
   const kb = [];
   for (const s of subgroups) {
-    kb.push([{ text: s.teacherName || s.id, callback_data: `select_subgroup:${s.id}` }]);
+    kb.push([{ text: s.teacher || s.name || s.id, callback_data: `select_subgroup:${s.id}` }]);
   }
   kb.push([{ text: 'Без группы/Все', callback_data: 'select_subgroup:null' }]);
   kb.push([{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]);
@@ -83,7 +83,7 @@ async function finalizeProfile(ctx, subgroupId) {
   if (saveSubgroupId) {
     try {
       const s = await Subgroup.findByPk(saveSubgroupId);
-      subgroupLabel = s ? s.teacherName || s.id : saveSubgroupId;
+      subgroupLabel = s ? s.teacher || s.name || s.id : saveSubgroupId;
     } catch (_e) {
       subgroupLabel = saveSubgroupId;
     }
@@ -324,7 +324,7 @@ const selectProfileScene = new Scenes.WizardScene(
             if (finalSubgroupId) {
               try {
                 const s = await Subgroup.findByPk(finalSubgroupId);
-                subLabel = s ? s.teacherName || s.id : finalSubgroupId;
+                subLabel = s ? s.teacher || s.name || s.id : finalSubgroupId;
               } catch (_e) { subLabel = finalSubgroupId; }
             }
             await ctx.reply(`✅ Профиль обновлен: ${finalClassId} ${trackLabel} ${subLabel}\nТеперь покажу меню`);
@@ -375,7 +375,7 @@ const selectProfileScene = new Scenes.WizardScene(
               if (finalSubgroupId) {
                 try {
                   const s = await Subgroup.findByPk(finalSubgroupId);
-                  subLabel = s ? s.teacherName || s.id : finalSubgroupId;
+                  subLabel = s ? s.teacher || s.name || s.id : finalSubgroupId;
                 } catch (_e) { subLabel = finalSubgroupId; }
               }
               await ctx.reply(`✅ Профиль обновлен: ${original.classId} ${trackLabel} ${subLabel}\nТеперь покажу меню`);

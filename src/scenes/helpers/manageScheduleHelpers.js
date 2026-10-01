@@ -123,13 +123,13 @@ async function promptAudienceSubgroup(ctx) {
     const subgroups = await Subgroup.findAll({ order: [['id', 'ASC']] });
     // Фильтруем по subject если возможно, но показываем все с пометкой
     const list = subgroups.length
-      ? subgroups.map((s) => `${s.id} — ${s.subject} — ${s.teacherName || '—'} ${s.classId ? '(' + s.classId + ')' : '(все классы)'}`).join('\n')
+      ? subgroups.map((s) => `${s.id} — ${s.division || s.subject || '—'} — ${s.teacher || s.name || '—'} ${s.classId ? '(' + s.classId + ')' : '(все классы)'}`).join('\n')
       : 'Нет подгрупп.';
     const keyboard = subgroups.length
       ? {
         reply_markup: {
           inline_keyboard: [
-            ...subgroups.map((s) => [{ text: `${s.id} (${s.teacherName || s.subject})`, callback_data: `audience_subgroup_${s.id}` }]),
+            ...subgroups.map((s) => [{ text: `${s.id} (${s.teacher || s.name || s.id})`, callback_data: `audience_subgroup_${s.id}` }]),
             [{ text: '➖ Без подгруппы', callback_data: 'audience_subgroup_skip' }],
           ],
         },
@@ -276,12 +276,15 @@ async function handleAddAudienceSubgroup(ctx) {
       }
       const pending = ctx.wizard.state.pending || ctx.wizard.state.pendingEdit;
       const subjectName = pending ? pending.subjectName : '';
-      const subNorm = normalizeSubject(sg.subject);
-      const subjNorm = normalizeSubject(subjectName);
-      const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
-      if (subNorm !== subjNorm && !isEnglishMatch) {
-        await ctx.reply(`❌ Подгруппа ${sg.teacherName || sg.id} для предмета ${sg.subject}, а вы ввели ${subjectName}`, cancelKeyboard);
-        return;
+      // P1 v2: subject задан → валидация как раньше; null → подгруппа годится для любого предмета
+      if (sg.subject != null && String(sg.subject).trim() !== '') {
+        const subNorm = normalizeSubject(sg.subject);
+        const subjNorm = normalizeSubject(subjectName);
+        const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
+        if (subNorm !== subjNorm && !isEnglishMatch) {
+          await ctx.reply(`❌ Подгруппа ${sg.teacher || sg.name || sg.id} для предмета ${sg.subject}, а вы ввели ${subjectName}`, cancelKeyboard);
+          return;
+        }
       }
       ctx.wizard.state.audience.subgroupId = sg.id;
     } catch (e) {
@@ -376,7 +379,7 @@ async function handleAddRoom(ctx) {
       try {
         const { Subgroup } = require('../../models');
         const sg = audience.subgroupId ? await Subgroup.findByPk(audience.subgroupId) : null;
-        const teacher = sg ? (sg.teacherName || sg.id) : audience.subgroupId;
+        const teacher = sg ? (sg.teacher || sg.name || sg.id) : audience.subgroupId;
         const subj = sg ? sg.subject : 'unknown';
         await ctx.reply(`❌ Подгруппа ${teacher} для предмета ${subj}, а вы ввели ${subjectName}`, cancelKeyboard);
       } catch (_e) {
@@ -463,7 +466,7 @@ async function handleEditRoom(ctx) {
       try {
         const { Subgroup } = require('../../models');
         const sg = audience.subgroupId ? await Subgroup.findByPk(audience.subgroupId) : null;
-        const teacher = sg ? (sg.teacherName || sg.id) : audience.subgroupId;
+        const teacher = sg ? (sg.teacher || sg.name || sg.id) : audience.subgroupId;
         const subj = sg ? sg.subject : 'unknown';
         await ctx.reply(`❌ Подгруппа ${teacher} для предмета ${subj}, а вы ввели ${subjectName}`, cancelKeyboard);
       } catch (_e) {
@@ -712,7 +715,7 @@ async function handleSubgroupList(ctx) {
       await ctx.reply('👩‍🏫 Подгрупп пока нет.', backKeyboard);
       return ctx.wizard.back();
     }
-    const lines = subs.map((s) => `ID: ${s.id} — ${s.subject} — ${s.teacherName || '—'} ${s.classId ? '(' + s.classId + ')' : '(все)'} ${s.active ? '✅' : '❌'}`);
+    const lines = subs.map((s) => `ID: ${s.id} — ${s.division || s.subject || '—'} — ${s.teacher || s.name || '—'} ${s.classId ? '(' + s.classId + ')' : '(все)'} ${s.active ? '✅' : '❌'}`);
     await ctx.reply(`👩‍🏫 Подгруппы:\n${lines.join('\n')}\n\nДля добавления: "<предмет> <id> <учитель> [classId]"\nПример: английский belova Белова 10А\nДля удаления: отправьте ID подгруппы.`, backKeyboard);
     ctx.wizard.state.action = 'subgroups_list';
   } catch (e) {
@@ -731,7 +734,7 @@ async function handleSubgroupAdd(ctx) {
   try {
     const subgroupService = require('../../services/subgroupService');
     const created = await subgroupService.create(text);
-    await ctx.reply(`✅ Подгруппа создана: ${created.id} — ${created.subject} — ${created.teacherName || '—'}`, backKeyboard);
+    await ctx.reply(`✅ Подгруппа создана: ${created.id} — ${created.division} — ${created.teacher || created.name || '—'}`, backKeyboard);
     return ctx.wizard.back();
   } catch (e) {
     if (e.message === 'SLOT_TAKEN') {
@@ -776,7 +779,7 @@ async function handleStats(ctx) {
     try {
       const { Subgroup } = require('../../models');
       const subs = await Subgroup.findAll();
-      const subMap = new Map(subs.map((s) => [s.id, s.teacherName || s.id]));
+      const subMap = new Map(subs.map((s) => [s.id, s.teacher || s.name || s.id]));
       if (summary.bySubgroup && summary.bySubgroup.length) {
         subgroupLabel = summary.bySubgroup.map((s) => `${subMap.get(s.subgroupId) || s.subgroupId} ${s.count}`).join('/');
       } else {
@@ -1014,7 +1017,7 @@ async function handleUserDetail(ctx) {
     try {
       const { Subgroup } = require('../../models');
       const sg = await Subgroup.findByPk(subgroupId);
-      teacherLabel = sg ? (sg.teacherName || sg.id) : subgroupId;
+      teacherLabel = sg ? (sg.teacher || sg.name || sg.id) : subgroupId;
     } catch (_e) {
       teacherLabel = subgroupId;
     }

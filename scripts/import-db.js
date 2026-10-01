@@ -39,6 +39,29 @@ async function resetSequence(table, idColumn) {
   }
 }
 
+/**
+ * P1 item 6 — whitelist полей из модели (не дрейфует от схемы):
+ * берём только ключи из Model.rawAttributes, неизвестные поля — warn и пропуск.
+ * @param {import('sequelize').Model} Model
+ * @param {string} label
+ * @param {Array<object>} rows
+ * @returns {Array<object>}
+ */
+function pickKnownFields(Model, label, rows) {
+  const allowed = new Set(Object.keys(Model.rawAttributes));
+  return (rows || []).map((row) => {
+    const out = {};
+    for (const key of Object.keys(row)) {
+      if (allowed.has(key)) {
+        out[key] = row[key];
+      } else {
+        console.warn(`⚠️ import-db: неизвестное поле ${label}.${key} пропущено`);
+      }
+    }
+    return out;
+  });
+}
+
 async function run() {
   const doImport = process.argv.includes('--yes');
 
@@ -106,132 +129,43 @@ async function run() {
 
     // Порядок создания: от базовых к зависимым (обратный удалению)
     if (classes.length > 0) {
-      const fields = ['id', 'grade', 'letter', 'enabled', 'createdAt', 'updatedAt'];
-      const rows = classes.map((c) => {
-        const r = {};
-        for (const k of fields) if (c[k] !== undefined) r[k] = c[k];
-        return r;
-      });
-      await Class.bulkCreate(rows, { transaction: t, validate: false });
+      await Class.bulkCreate(pickKnownFields(Class, 'classes', classes), { transaction: t, validate: false });
     }
 
     if (tracks.length > 0) {
-      const fields = ['id', 'classId', 'name', 'isCommon', 'createdAt', 'updatedAt'];
-      const rows = tracks.map((tr) => {
-        const r = {};
-        for (const k of fields) if (tr[k] !== undefined) r[k] = tr[k];
-        return r;
-      });
-      await Track.bulkCreate(rows, { transaction: t, validate: false });
+      await Track.bulkCreate(pickKnownFields(Track, 'tracks', tracks), { transaction: t, validate: false });
     }
 
     if (subgroups.length > 0) {
-      const fields = ['id', 'subject', 'teacherName', 'classId', 'active', 'createdAt', 'updatedAt'];
-      const rows = subgroups.map((s) => {
-        const r = {};
-        for (const k of fields) if (s[k] !== undefined) r[k] = s[k];
-        return r;
-      });
-      await Subgroup.bulkCreate(rows, { transaction: t, validate: false });
+      await Subgroup.bulkCreate(pickKnownFields(Subgroup, 'subgroups', subgroups), { transaction: t, validate: false });
     }
 
     if (users.length > 0) {
-      const fields = [
-        'userId',
-        'username',
-        'firstName',
-        'lastName',
-        'languageCode',
-        'isPremium',
-        'addedToAttachmentMenu',
-        'classId',
-        'trackId',
-        'subgroupId',
-        'firstSeenAt',
-        'lastSeenAt',
-        'lastAction',
-        'homeworkCount',
-        'interactionCount',
-        'createdAt',
-        'updatedAt'
-      ];
-      const rows = users.map((u) => {
-        const r = {};
-        for (const k of fields) if (u[k] !== undefined) r[k] = u[k];
-        return r;
-      });
-      await User.bulkCreate(rows, { transaction: t, validate: false });
+      await User.bulkCreate(pickKnownFields(User, 'users', users), { transaction: t, validate: false });
     }
 
     if (userProfiles.length > 0) {
-      const fields = ['userId', 'classId', 'trackId', 'subgroupId', 'version', 'createdAt', 'updatedAt'];
-      const rows = userProfiles.map((p) => {
-        const r = {};
-        for (const k of fields) if (p[k] !== undefined) r[k] = p[k];
-        return r;
-      });
-      await UserProfile.bulkCreate(rows, { transaction: t, validate: false });
+      await UserProfile.bulkCreate(pickKnownFields(UserProfile, 'userProfiles', userProfiles), { transaction: t, validate: false });
     }
 
     if (lessonTimes.length > 0) {
-      const fields = ['lessonNumber', 'startTime', 'endTime', 'createdAt', 'updatedAt'];
-      const rows = lessonTimes.map((lt) => {
-        const r = {};
-        for (const k of fields) if (lt[k] !== undefined) r[k] = lt[k];
-        return r;
-      });
-      await LessonTime.bulkCreate(rows, { transaction: t, validate: false });
+      await LessonTime.bulkCreate(pickKnownFields(LessonTime, 'lessonTimes', lessonTimes), { transaction: t, validate: false });
     }
 
     if (settings.length > 0) {
-      const fields = ['key', 'value', 'createdAt', 'updatedAt'];
-      const rows = settings.map((s) => {
-        const r = {};
-        for (const k of fields) if (s[k] !== undefined) r[k] = s[k];
-        return r;
-      });
-      await Setting.bulkCreate(rows, { transaction: t, validate: false });
+      await Setting.bulkCreate(pickKnownFields(Setting, 'settings', settings), { transaction: t, validate: false });
     }
 
     if (schedules.length > 0) {
-      const fields = [
-        'id',
-        'lessonNumber',
-        'subjectName',
-        'dayOfWeek',
-        'room',
-        'classId',
-        'trackId',
-        'subgroupId',
-        'createdAt',
-        'updatedAt'
-      ];
-      const rows = schedules.map((s) => {
-        const r = {};
-        for (const k of fields) if (s[k] !== undefined) r[k] = s[k];
-        return r;
-      });
-      await Schedule.bulkCreate(rows, { transaction: t, validate: false });
+      await Schedule.bulkCreate(pickKnownFields(Schedule, 'schedules', schedules), { transaction: t, validate: false });
     }
 
     if (homeworks.length > 0) {
-      const fields = ['id', 'userId', 'scheduleId', 'date', 'content', 'createdAt', 'updatedAt'];
-      const rows = homeworks.map((h) => {
-        const r = {};
-        for (const k of fields) if (h[k] !== undefined) r[k] = h[k];
-        return r;
-      });
-      await Homework.bulkCreate(rows, { transaction: t, validate: false });
+      await Homework.bulkCreate(pickKnownFields(Homework, 'homeworks', homeworks), { transaction: t, validate: false });
     }
 
     if (userEvents.length > 0) {
-      const fields = ['id', 'userId', 'type', 'payload', 'meta', 'createdAt', 'updatedAt'];
-      const rows = userEvents.map((ev) => {
-        const r = {};
-        for (const k of fields) if (ev[k] !== undefined) r[k] = ev[k];
-        return r;
-      });
-      await UserEvent.bulkCreate(rows, { transaction: t, validate: false });
+      await UserEvent.bulkCreate(pickKnownFields(UserEvent, 'userEvents', userEvents), { transaction: t, validate: false });
     }
 
     await t.commit();

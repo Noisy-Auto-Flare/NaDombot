@@ -42,7 +42,7 @@ async function testConnection() {
   }
 }
 
-const SCHEMA_VERSION_P0 = 'p0-baseline';
+const SCHEMA_VERSION = 'p1-subgroup-v2';
 // Явный список колонок schedules для D2 (id сохраняем обязательно — иначе битые homeworks.scheduleId)
 const CANONICAL_SCHEDULE_COLS = [
   'id',
@@ -303,7 +303,79 @@ async function repairSchedulesD2() {
 }
 
 /**
+ * P1 item 1 — колонки subgroups v2 (идемпотентно, без DROP).
+ * Вызывать ДО sequelize.sync(): иначе sync упадёт на индексе subgroups_division,
+ * когда колонки division ещё нет (legacy-БД со схемой teacherName).
+ */
+async function ensureSubgroupsV2Columns() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('subgroups').catch(() => null);
+    if (!desc) return;
+    const { DataTypes } = require('sequelize');
+    if (desc.teacherName && !desc.teacher) {
+      await qi.addColumn('subgroups', 'teacher', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
+      console.log('✅ Prelim миграция: добавлен subgroups.teacher');
+    }
+    if (!desc.division) {
+      await qi.addColumn('subgroups', 'division', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
+      console.log('✅ Prelim миграция: добавлен subgroups.division');
+    }
+    if (!desc.name) {
+      await qi.addColumn('subgroups', 'name', { type: DataTypes.STRING(100), allowNull: true, defaultValue: null });
+      console.log('✅ Prelim миграция: добавлен subgroups.name');
+    }
+  } catch (preErr) {
+    console.warn('⚠️ Prelim V2 миграция subgroups:', preErr.message || preErr);
+  }
+}
+
+/**
+ * P1 item 1 — миграция subgroups на схему v2 (идемпотентная добивка, без DROP).
+ * Старые строки belova/petrova: `division='Английский язык'`, `teacherName→teacher`,
+ * `name` из учителя; `id` стабильны, `schedules.subgroupId` не трогаем.
+ * Legacy-колонка `teacherName` остаётся в файле БД (не мешает, sync без alter её не дропает).
+ */
+async function migrateSubgroupsV2() {
+  try {
+    await ensureSubgroupsV2Columns();
+    const qi = sequelize.getQueryInterface();
+    // Бэкфилл существующих строк (id стабильны)
+    try {
+      await sequelize.query("UPDATE subgroups SET division='Английский язык' WHERE division IS NULL OR division=''");
+    } catch (_bf1) { void _bf1; }
+    const hasTeacherName = !!(await qi.describeTable('subgroups').catch(() => ({}))).teacherName;
+    if (hasTeacherName) {
+      try {
+        await sequelize.query('UPDATE subgroups SET teacher=teacherName WHERE teacher IS NULL AND teacherName IS NOT NULL');
+      } catch (_bf2) { void _bf2; }
+      try {
+        await sequelize.query("UPDATE subgroups SET name=COALESCE(teacher, teacherName, id) WHERE name IS NULL OR name=''");
+      } catch (_bf3) { void _bf3; }
+    } else {
+      try {
+        await sequelize.query("UPDATE subgroups SET name=COALESCE(teacher, id) WHERE name IS NULL OR name=''");
+      } catch (_bf4) { void _bf4; }
+    }
+    // subject → nullable (старая схема требовала NOT NULL); не удалось — только warn
+    try {
+      const after = await qi.describeTable('subgroups').catch(() => null);
+      if (after && after.subject && after.subject.allowNull === false) {
+        const { DataTypes: DT } = require('sequelize');
+        await qi.changeColumn('subgroups', 'subject', { type: DT.STRING(40), allowNull: true, defaultValue: null });
+        console.log('✅ Миграция: subgroups.subject → nullable');
+      }
+    } catch (subjErr) {
+      console.warn('⚠️ subgroups.subject остался NOT NULL (subject=null встанет только на свежих БД):', subjErr.message || subjErr);
+    }
+  } catch (migErr) {
+    console.warn('⚠️ V2 миграция subgroups:', migErr.message || migErr);
+  }
+}
+
+/**
  * Идемпотентный foundation-seed V6: только find-or-create/skip, никогда destroy.
+ * Подгруппы — в схеме v2 (P1): division/name/teacher/subject.
  */
 async function seedFoundationIdempotent() {
   const { Class, Track, Subgroup } = require('../models');
@@ -321,11 +393,11 @@ async function seedFoundationIdempotent() {
   });
   await Subgroup.findOrCreate({
     where: { id: 'belova' },
-    defaults: { subject: 'английский', teacherName: 'Белова', classId: null, active: true }
+    defaults: { division: 'Английский язык', name: 'Белова', teacher: 'Белова', subject: 'английский', classId: null, active: true }
   });
   await Subgroup.findOrCreate({
     where: { id: 'petrova' },
-    defaults: { subject: 'английский', teacherName: 'Петрова', classId: null, active: true }
+    defaults: { division: 'Английский язык', name: 'Петрова', teacher: 'Петрова', subject: 'английский', classId: null, active: true }
   });
   // Бэкфилл существующих schedule без classId (legacy rows)
   try {
@@ -397,8 +469,8 @@ async function runDataMigrations() {
 async function writeSchemaVersion() {
   try {
     const { Setting } = require('../models');
-    await Setting.upsert({ key: 'schema_version', value: SCHEMA_VERSION_P0 });
-    console.log(`✅ schema_version=${SCHEMA_VERSION_P0}`);
+    await Setting.upsert({ key: 'schema_version', value: SCHEMA_VERSION });
+    console.log(`✅ schema_version=${SCHEMA_VERSION}`);
   } catch (verErr) {
     console.warn('⚠️ schema_version не записана:', verErr.message || verErr);
   }
@@ -442,6 +514,12 @@ async function syncDatabase() {
       }
     } catch (preMig) {
       console.warn('⚠️ Prelim V6 миграция:', preMig.message || preMig);
+    }
+    // P1 item 1: колонки subgroups v2 ДО sync (иначе sync упадёт на subgroups_division)
+    try {
+      await ensureSubgroupsV2Columns();
+    } catch (_sgPre) {
+      void _sgPre;
     }
     // Безопасный sync без alter — создаёт отсутствующие таблицы, не ломает существующие (SQLite alter в Sequelize 6 криво пересоздаёт UNIQUE).
     // Новые колонки/индексы V6 добавляем вручную ниже (совместимо с sync({alter:true}) по результату, но без бага).
@@ -516,6 +594,12 @@ async function syncDatabase() {
     } catch (migErr) {
       console.warn('⚠️ V6 миграция колонок/индексов:', migErr.message || migErr);
     }
+    // P1 item 1: subgroups → v2 (division/name/teacher, subject nullable) до сидов
+    try {
+      await migrateSubgroupsV2();
+    } catch (_sg) {
+      void _sg;
+    }
     try {
       await sequelize.query('PRAGMA foreign_keys = ON');
     } catch (_fk2) {
@@ -534,6 +618,13 @@ async function syncDatabase() {
       await seedFoundationIdempotent();
     } catch (foundationErr) {
       console.warn('⚠️ V6 foundation seeding failed:', foundationErr.message || foundationErr);
+    }
+    // P1 item 3: каталог аудиторий из файла поверх БД (не роняет boot)
+    try {
+      const { syncAudienceCatalog } = require('../utils/audienceLoader');
+      await syncAudienceCatalog();
+    } catch (audienceErr) {
+      console.warn('⚠️ audienceLoader failed:', audienceErr.message || audienceErr);
     }
     // Ledger одноразовых миграций данных (граница: схема — только sync())
     try {
@@ -555,6 +646,12 @@ async function syncDatabase() {
       // Подключаем модели динамически, чтобы гарантировать их регистрацию в sequelize
       const { Setting, Schedule, Homework, LessonTime, Class, Track, Subgroup, User, UserEvent, UserProfile } = require('../models');
 
+      // P1 item 1: колонки subgroups v2 до per-model sync (та же причина — subgroups_division)
+      try {
+        await ensureSubgroupsV2Columns();
+      } catch (_sgPreFb) {
+        void _sgPreFb;
+      }
       // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
       await Setting.sync();
       await Schedule.sync();
@@ -581,6 +678,12 @@ async function syncDatabase() {
         console.warn('⚠️ V6 foundation seeding failed (fallback):', foundationFallbackErr.message || foundationFallbackErr);
       }
       try {
+        const { syncAudienceCatalog } = require('../utils/audienceLoader');
+        await syncAudienceCatalog();
+      } catch (audienceFbErr) {
+        console.warn('⚠️ audienceLoader failed (fallback):', audienceFbErr.message || audienceFbErr);
+      }
+      try {
         await runDataMigrations();
       } catch (ledgerFbErr) {
         console.warn('⚠️ P0 ledger failed (fallback):', ledgerFbErr.message || ledgerFbErr);
@@ -597,5 +700,7 @@ module.exports = {
   testConnection,
   syncDatabase,
   // exposed for testing
-  _dedupeByAudience: dedupeByAudience
+  _dedupeByAudience: dedupeByAudience,
+  _migrateSubgroupsV2: migrateSubgroupsV2,
+  _ensureSubgroupsV2Columns: ensureSubgroupsV2Columns
 };

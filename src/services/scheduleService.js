@@ -188,12 +188,15 @@ async function create({ dayOfWeek, lessonNumber, subjectName, room, classId = '1
       const err = new Error('SUBGROUP_NOT_FOUND');
       throw err;
     }
-    const subNorm = normalizeSubject(sg.subject);
-    const subjNorm = normalizeSubject(cleanSubject);
-    const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
-    if (subNorm !== subjNorm && !isEnglishMatch) {
-      const err = new Error('SUBGROUP_SUBJECT_MISMATCH');
-      throw err;
+    // P1 v2: subject задан → валидация как раньше; null → подгруппа годится для любого предмета
+    if (sg.subject != null && String(sg.subject).trim() !== '') {
+      const subNorm = normalizeSubject(sg.subject);
+      const subjNorm = normalizeSubject(cleanSubject);
+      const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
+      if (subNorm !== subjNorm && !isEnglishMatch) {
+        const err = new Error('SUBGROUP_SUBJECT_MISMATCH');
+        throw err;
+      }
     }
   }
 
@@ -248,12 +251,15 @@ async function update(id, data) {
       const err = new Error('SUBGROUP_NOT_FOUND');
       throw err;
     }
-    const subNorm = normalizeSubject(sg.subject);
-    const subjNorm = normalizeSubject(newSubjectForCheck);
-    const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
-    if (subNorm !== subjNorm && !isEnglishMatch) {
-      const err = new Error('SUBGROUP_SUBJECT_MISMATCH');
-      throw err;
+    // P1 v2: subject задан → валидация как раньше; null → подгруппа годится для любого предмета
+    if (sg.subject != null && String(sg.subject).trim() !== '') {
+      const subNorm = normalizeSubject(sg.subject);
+      const subjNorm = normalizeSubject(newSubjectForCheck);
+      const isEnglishMatch = subNorm === 'английский' && subjNorm.includes('английский');
+      if (subNorm !== subjNorm && !isEnglishMatch) {
+        const err = new Error('SUBGROUP_SUBJECT_MISMATCH');
+        throw err;
+      }
     }
   }
 

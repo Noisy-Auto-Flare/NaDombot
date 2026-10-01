@@ -41,7 +41,7 @@ async function handleStart(ctx) {
           }
           if (profile.subgroupId) {
             const s = await Subgroup.findByPk(profile.subgroupId);
-            subShort = s ? s.teacherName || s.id : profile.subgroupId;
+            subShort = s ? s.teacher || s.name || s.id : profile.subgroupId;
           } else {
             subShort = '—';
           }
@@ -122,7 +122,7 @@ async function handleProfile(ctx) {
     if (profile.subgroupId) {
       try {
         const s = await Subgroup.findByPk(profile.subgroupId);
-        if (s) subgroupLabel = s.teacherName || s.id;
+        if (s) subgroupLabel = s.teacher || s.name || s.id;
         else subgroupLabel = profile.subgroupId;
       } catch (_e) {
         subgroupLabel = profile.subgroupId;

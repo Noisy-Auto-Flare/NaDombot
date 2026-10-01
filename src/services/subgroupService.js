@@ -23,9 +23,11 @@ async function findById(id) {
 }
 
 /**
- * Создать подгруппу.
- * Ожидаемый ввод: "<subject> <id> <teacherName> [classId]"
- * Например: "английский belova Белова 10А" или "английский ivanova Иванова"
+ * Создать подгруппу (P1 v2).
+ * Ожидаемый ввод: "<subject> <id> <учитель...> [classId]"
+ * Например: "английский belova Белова 10А" или "английский ivanova Иванова".
+ * subject `-` → null (подгруппа годится для любого предмета).
+ * division по умолчанию 'Английский язык', name по умолчанию = учитель.
  * @param {object|string} data
  * @returns {Promise<import('sequelize').Model>}
  */
@@ -34,7 +36,7 @@ async function create(data) {
   if (typeof data === 'string') {
     payload = parseSubgroupInput(data);
   }
-  if (!payload.id || !payload.subject) {
+  if (!payload.id) {
     throw new Error('❌ Для подгруппы нужно: <предмет> <id> <учитель> [classId]');
   }
   const existing = await Subgroup.findByPk(payload.id);
@@ -47,7 +49,15 @@ async function create(data) {
     const classExists = await Class.findByPk(payload.classId);
     if (!classExists) throw new Error('❌ Класс не найден: ' + payload.classId);
   }
-  return Subgroup.create(payload);
+  return Subgroup.create({
+    id: payload.id,
+    division: payload.division || 'Английский язык',
+    name: payload.name || payload.teacher || payload.id,
+    teacher: payload.teacher != null ? payload.teacher : null,
+    subject: payload.subject != null ? payload.subject : null,
+    classId: payload.classId || null,
+    active: payload.active !== false
+  });
 }
 
 /**
@@ -64,11 +74,12 @@ async function remove(id) {
 }
 
 /**
- * Парсит ввод подгруппы.
- * Формат: "<subject> <id> <teacherName...> [classId]" — последний токен может быть классом если похож на "10А".
+ * Парсит ввод подгруппы (P1 v2).
+ * Формат: "<subject> <id> <учитель...> [classId]" — последний токен может быть классом если похож на "10А".
+ * subject `-` → null (без привязки к предмету). division/name выводятся по умолчанию.
  * Эвристика: если последний токен матчит /^\d{1,2}[А-Яа-яA-Za-z]+$/ и токенов >=4 — считаем его classId.
  * @param {string} input
- * @returns {{subject:string, id:string, teacherName:string|null, classId:string|null, active:boolean}}
+ * @returns {{subject:string|null, id:string, division:string, name:string|null, teacher:string|null, classId:string|null, active:boolean}}
  */
 function parseSubgroupInput(input) {
   const raw = String(input).trim();
@@ -77,9 +88,10 @@ function parseSubgroupInput(input) {
   if (parts.length < 2) {
     throw new Error('❌ Формат: <предмет> <id> <учитель> [classId]  Например: английский belova Белова');
   }
-  const subject = parts[0];
+  const subjectRaw = parts[0];
+  const subject = subjectRaw === '-' ? null : subjectRaw;
   const id = parts[1];
-  let teacherName = null;
+  let teacher = null;
   let classId = null;
 
   if (parts.length >= 3) {
@@ -89,13 +101,14 @@ function parseSubgroupInput(input) {
     const looksLikeClass = /^\d{1,2}[А-Яа-яA-Za-z]+$/.test(last);
     if (looksLikeClass && rest.length >= 2) {
       classId = last;
-      teacherName = rest.slice(0, -1).join(' ') || null;
+      teacher = rest.slice(0, -1).join(' ') || null;
     } else {
-      teacherName = rest.join(' ') || null;
+      teacher = rest.join(' ') || null;
     }
   }
+  if (teacher === '-') teacher = null;
 
-  return { subject, id, teacherName, classId, active: true };
+  return { subject, id, division: 'Английский язык', name: teacher, teacher, classId, active: true };
 }
 
 module.exports = {

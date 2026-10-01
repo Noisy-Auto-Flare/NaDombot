@@ -10,8 +10,12 @@ services:
       USE_SQLITE: "true"
       SQLITE_PATH: /app/data/db.sqlite
       NODE_ENV: ${NODE_ENV:-production}
+      MULTIPROFILE_ENABLED: ${MULTIPROFILE_ENABLED:-0}
+      MULTIPROFILE_FORCE: ${MULTIPROFILE_FORCE:-}
+      AUDIENCE_CONFIG_PATH: /app/config/audience.json
     volumes:
       - sqlite_data:/app/data
+      - ./config/audience.json:/app/config/audience.json:ro
     networks:
       - homework_network
     restart: unless-stopped

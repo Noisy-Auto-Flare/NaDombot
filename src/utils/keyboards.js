@@ -34,14 +34,13 @@ const lessonsBackKeyboard = {
 
 /**
  * Главное админ-меню "Управление"
+ * P1 item 4: кнопок каталога (Классы/Профили/Подгруппы) нет — каталог правится
+ * в config/audience.json; код сервисов и хендлеры оставлены для сидов/стенда.
  */
 const adminMainKeyboard = {
   reply_markup: {
     inline_keyboard: [
       [{ text: '📚 Управление уроками', callback_data: 'lessons_manage' }],
-      [{ text: '🏫 Классы', callback_data: 'schedule_classes' }],
-      [{ text: '🧬 Профили', callback_data: 'schedule_tracks' }],
-      [{ text: '👩‍🏫 Подгруппы', callback_data: 'schedule_subgroups' }],
       [{ text: '🧩 Режимы', callback_data: 'modes' }],
       [{ text: '📊 Пользователи', callback_data: 'users_list' }],
       [{ text: '📈 Статистика', callback_data: 'schedule_stats' }],
@@ -67,7 +66,8 @@ const lessonsManageKeyboard = {
 };
 
 /**
- * @deprecated — оставлен для совместимости, используйте adminMainKeyboard / lessonsManageKeyboard
+ * @deprecated — оставлен для совместимости, используйте adminMainKeyboard / lessonsManageKeyboard.
+ * Кнопки каталога скрыты (P1 item 4), код сервисов оставлен.
  */
 const manageScheduleKeyboard = {
   reply_markup: {
@@ -78,9 +78,6 @@ const manageScheduleKeyboard = {
       [{ text: '🗑 Удалить урок', callback_data: 'schedule_delete' }],
       [{ text: '🔔 Настроить звонки', callback_data: 'edit_bells' }],
       [{ text: '⏰ Порог быстрых кнопок', callback_data: 'edit_quick_pick_threshold' }],
-      [{ text: '🏫 Классы', callback_data: 'schedule_classes' }],
-      [{ text: '🧬 Профили', callback_data: 'schedule_tracks' }],
-      [{ text: '👩‍🏫 Подгруппы', callback_data: 'schedule_subgroups' }],
       [{ text: '📊 Статистика', callback_data: 'schedule_stats' }],
       [{ text: '🧩 Режимы', callback_data: 'schedule_toggle_multiprofile' }],
       [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }],

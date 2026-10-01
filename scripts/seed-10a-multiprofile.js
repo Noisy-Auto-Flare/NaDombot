@@ -9,8 +9,8 @@ async function ensureBase() {
   await Class.findOrCreate({ where:{id:'10А'}, defaults:{id:'10А', grade:10, letter:'А', enabled:true}});
   await Track.findOrCreate({ where:{id:'tech', classId:'10А'}, defaults:{id:'tech', classId:'10А', name:'Технологический'}});
   await Track.findOrCreate({ where:{id:'soc', classId:'10А'}, defaults:{id:'soc', classId:'10А', name:'Социально-экономический'}});
-  await Subgroup.findOrCreate({ where:{id:'belova'}, defaults:{id:'belova', subject:'английский', teacherName:'Белова', classId:null, active:true}});
-  await Subgroup.findOrCreate({ where:{id:'petrova'}, defaults:{id:'petrova', subject:'английский', teacherName:'Петрова', classId:null, active:true}});
+  await Subgroup.findOrCreate({ where:{id:'belova'}, defaults:{id:'belova', division:'Английский язык', name:'Белова', teacher:'Белова', subject:'английский', classId:null, active:true}});
+  await Subgroup.findOrCreate({ where:{id:'petrova'}, defaults:{id:'petrova', division:'Английский язык', name:'Петрова', teacher:'Петрова', subject:'английский', classId:null, active:true}});
   await Setting.upsert({key:'multiprofile_enabled', value:'1'});
 }
 
@@ -63,16 +63,79 @@ const SCHEDULE = [
   {dayOfWeek:4, lessonNumber:7, subjectName:'Обществознание', room:'3021', classId:'10А', trackId:'soc', subgroupId:null},
 ];
 
+/**
+ * P1 item 0 — `--replace`-гард: по умолчанию скрипт безопасен (только upsert,
+ * никаких destroy). Массовая перезаливка 10А — только с явным `--replace`.
+ */
+const REPLACE = process.argv.includes('--replace');
+
+/**
+ * Естественный ключ строки расписания (совпадает с unique_lesson_per_audience).
+ * @param {object} s
+ */
+function naturalKey(s) {
+  return {
+    classId: s.classId != null ? s.classId : '10А',
+    dayOfWeek: s.dayOfWeek,
+    lessonNumber: s.lessonNumber,
+    trackId: s.trackId != null ? s.trackId : null,
+    subgroupId: s.subgroupId != null ? s.subgroupId : null
+  };
+}
+
+async function upsertScheduleRow(s) {
+  const { Op } = require('sequelize');
+  const key = naturalKey(s);
+  const where = {
+    classId: key.classId,
+    dayOfWeek: key.dayOfWeek,
+    lessonNumber: key.lessonNumber,
+    trackId: key.trackId == null ? { [Op.is]: null } : key.trackId,
+    subgroupId: key.subgroupId == null ? { [Op.is]: null } : key.subgroupId
+  };
+  const existing = await Schedule.findOne({ where });
+  if (!existing) {
+    await Schedule.create({
+      dayOfWeek: s.dayOfWeek,
+      lessonNumber: s.lessonNumber,
+      subjectName: s.subjectName,
+      room: s.room != null ? s.room : null,
+      classId: key.classId,
+      trackId: key.trackId,
+      subgroupId: key.subgroupId
+    });
+    return 'created';
+  }
+  let dirty = false;
+  if (existing.subjectName !== s.subjectName) { existing.subjectName = s.subjectName; dirty = true; }
+  const wantRoom = s.room != null ? s.room : null;
+  if ((existing.room || null) !== wantRoom) { existing.room = wantRoom; dirty = true; }
+  if (dirty) await existing.save();
+  return dirty ? 'updated' : 'skipped';
+}
+
 async function run(){
   await syncDatabase();
   await ensureBase();
-  console.log('Cleaning old 10А schedules...');
-  const { Homework } = require('../src/models');
-  const oldIds = (await Schedule.findAll({where:{classId:'10А'}, attributes:['id'], raw:true})).map(r=>r.id);
-  if(oldIds.length){ await Homework.destroy({where:{scheduleId: oldIds}}); console.log('  Deleted', oldIds.length, 'homework refs'); }
-  await Schedule.destroy({where:{classId:'10А'}});
-  console.log('Inserting', SCHEDULE.length, 'rows...');
-  for(const s of SCHEDULE) await Schedule.create(s);
+  if (REPLACE) {
+    console.log('Cleaning old 10А schedules (--replace)...');
+    const { Homework } = require('../src/models');
+    const oldIds = (await Schedule.findAll({where:{classId:'10А'}, attributes:['id'], raw:true})).map(r=>r.id);
+    if(oldIds.length){ await Homework.destroy({where:{scheduleId: oldIds}}); console.log('  Deleted', oldIds.length, 'homework refs'); }
+    await Schedule.destroy({where:{classId:'10А'}});
+    console.log('Inserting', SCHEDULE.length, 'rows...');
+    for(const s of SCHEDULE) await Schedule.create(s);
+  } else {
+    console.log('Upserting 10А schedules (без --replace: только upsert, без destroy)...');
+    let created = 0; let updated = 0; let skipped = 0;
+    for(const s of SCHEDULE) {
+      const res = await upsertScheduleRow(s);
+      if (res === 'created') created++;
+      else if (res === 'updated') updated++;
+      else skipped++;
+    }
+    console.log(`  created=${created} updated=${updated} skipped=${skipped} (всего в сиде: ${SCHEDULE.length})`);
+  }
   const count = await Schedule.count({where:{classId:'10А'}});
   console.log('✅ Seed done. 10А schedules:', count);
   const classes = await Class.findAll({raw:true});
@@ -80,7 +143,7 @@ async function run(){
   const subs = await Subgroup.findAll({raw:true});
   console.log('Classes:', classes.map(c=>c.id));
   console.log('Tracks:', tracks.map(t=>t.classId+':'+t.id));
-  console.log('Subgroups:', subs.map(s=>s.id+':'+s.teacherName+'/'+s.subject));
+  console.log('Subgroups:', subs.map(s=>s.id+':'+(s.teacher || s.name)+'/'+(s.subject != null ? s.subject : 'any')));
   const mp = await Setting.findByPk('multiprofile_enabled');
   console.log('multiprofile_enabled =', mp?.value);
   await sequelize.close(); process.exit(0);

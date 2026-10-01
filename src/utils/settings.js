@@ -74,19 +74,40 @@ function getHomeworkVisibilityLabel(mode) {
 
 /**
  * Получить флаг multiprofile_enabled (bool).
- * По умолчанию выключен для обратной совместимости.
+ * Приоритет (P1, §5 спек): MULTIPROFILE_FORCE (если задан) > Setting в БД >
+ * MULTIPROFILE_ENABLED (env, дефолт выключен для обратной совместимости).
  * @returns {Promise<boolean>}
  */
 async function getMultiprofileEnabled() {
   try {
+    const force = parseEnvBool(process.env.MULTIPROFILE_FORCE);
+    if (force !== null) return force;
     const setting = await Setting.findByPk(MULTIPROFILE_KEY);
-    if (!setting) return false;
-    const v = String(setting.value).toLowerCase();
-    return v === '1' || v === 'true' || v === 'enabled';
+    if (setting) {
+      const v = String(setting.value).toLowerCase();
+      return v === '1' || v === 'true' || v === 'enabled';
+    }
+    const envDefault = parseEnvBool(process.env.MULTIPROFILE_ENABLED);
+    return envDefault === true;
   } catch (err) {
     console.error('Ошибка при получении настройки multiprofile:', err);
     return false;
   }
+}
+
+/**
+ * Распарсить env-bool: '1'/'true'/'enabled'/'on' → true,
+ * '0'/'false'/'disabled'/'off' → false, пусто/не задано/мусор → null.
+ * @param {unknown} raw
+ * @returns {boolean|null}
+ */
+function parseEnvBool(raw) {
+  if (raw == null) return null;
+  const v = String(raw).trim().toLowerCase();
+  if (!v) return null;
+  if (v === '1' || v === 'true' || v === 'enabled' || v === 'on') return true;
+  if (v === '0' || v === 'false' || v === 'disabled' || v === 'off') return false;
+  return null;
 }
 
 /**
