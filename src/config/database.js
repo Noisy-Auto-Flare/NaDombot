@@ -739,6 +739,7 @@ module.exports = {
   sequelize,
   testConnection,
   syncDatabase,
+  SCHEMA_VERSION,
   // exposed for testing
   _dedupeByAudience: dedupeByAudience,
   _migrateSubgroupsV2: migrateSubgroupsV2,
