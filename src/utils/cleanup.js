@@ -1,4 +1,4 @@
-const { Homework } = require('../models');
+const { Homework, UserEvent } = require('../models');
 const { Op } = require('sequelize');
 
 /**
@@ -6,7 +6,8 @@ const { Op } = require('sequelize');
  */
 
 /**
- * Удалить домашние задания на прошедшие дни (до сегодняшнего дня)
+ * Удалить домашние задания на прошедшие дни (до сегодняшнего дня).
+ * P3: на старте больше НЕ вызывается (прошлое не удаляем); оставлена для ручного запуска.
  */
 async function cleanupOldHomeworks() {
   try {
@@ -35,6 +36,75 @@ async function cleanupOldHomeworks() {
 }
 
 /**
+ * Срок хранения ленты событий пользователя (P3 §12): 60 дней.
+ * Чистятся ТОЛЬКО user_events; строки users (паспорт) живут дальше.
+ */
+const USER_EVENTS_RETENTION_DAYS = 60;
+
+/**
+ * Период in-process джобы ретеншна user_events: раз в сутки, без внешних зависимостей
+ * (бот always-on — внешнего cron не нужно).
+ */
+const USER_EVENTS_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+let userEventsRetentionTimer = null;
+
+/**
+ * Удалить события user_events старше USER_EVENTS_RETENTION_DAYS дней.
+ * @param {number} [days=USER_EVENTS_RETENTION_DAYS]
+ * @returns {Promise<number>} число удалённых строк
+ */
+async function cleanupOldUserEvents(days = USER_EVENTS_RETENTION_DAYS) {
+  try {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const deletedCount = await UserEvent.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoff
+        }
+      }
+    });
+
+    if (deletedCount > 0) {
+      console.log(`✅ Ретеншн user_events: удалено ${deletedCount} событий старше ${days} дней`);
+    }
+
+    return deletedCount;
+  } catch (error) {
+    console.error('❌ Ошибка при ретеншне user_events:', error);
+    return 0;
+  }
+}
+
+/**
+ * Запустить in-process джобу ретеншна user_events: чистка раз в 24ч.
+ * Проверку при старте делает вызывающий (startBot) — здесь только интервал.
+ * Повторный вызов — no-op (таймер один).
+ * @returns {object|null} таймер интервала или null если уже запущен
+ */
+function startUserEventsRetentionJob() {
+  if (userEventsRetentionTimer) return null;
+  userEventsRetentionTimer = setInterval(() => {
+    cleanupOldUserEvents().catch((e) => console.error('❌ Ретеншн user_events (interval):', e.message || e));
+  }, USER_EVENTS_RETENTION_INTERVAL_MS);
+  // Не держать процесс только ради джобы (тесты/скрипты завершаются сами)
+  if (userEventsRetentionTimer && typeof userEventsRetentionTimer.unref === 'function') {
+    userEventsRetentionTimer.unref();
+  }
+  return userEventsRetentionTimer;
+}
+
+/**
+ * Остановить джобу ретеншна (для тестов).
+ */
+function stopUserEventsRetentionJob() {
+  if (userEventsRetentionTimer) {
+    clearInterval(userEventsRetentionTimer);
+    userEventsRetentionTimer = null;
+  }
+}
+
+/**
  * Запустить очистку старых данных
  * Можно вызывать периодически (например, при запуске бота или по расписанию)
  */
@@ -44,5 +114,10 @@ async function runCleanup() {
 
 module.exports = {
   cleanupOldHomeworks,
-  runCleanup
+  runCleanup,
+  cleanupOldUserEvents,
+  startUserEventsRetentionJob,
+  stopUserEventsRetentionJob,
+  USER_EVENTS_RETENTION_DAYS,
+  USER_EVENTS_RETENTION_INTERVAL_MS
 };

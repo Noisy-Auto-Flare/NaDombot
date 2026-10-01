@@ -1,7 +1,7 @@
 const bot = require('./config/bot');
 const { testConnection, syncDatabase } = require('./config/database');
 const { Scenes } = require('telegraf');
-const { runCleanup } = require('./utils/cleanup');
+const { cleanupOldUserEvents, startUserEventsRetentionJob } = require('./utils/cleanup');
 
 // Импорт сцен
 const addHomeworkScene = require('./scenes/addHomeworkScene');
@@ -31,7 +31,10 @@ const {
   handleProfileEditTrack,
   handleProfileEditSubgroup,
   handleProfileReset,
-  handleProfileToggleScope
+  handleProfileToggleScope,
+  handleHistory,
+  handleHistoryWeek,
+  handleHistoryMonth
 } = require('./handlers/commands');
 
 // Регистрация сцен
@@ -51,6 +54,9 @@ bot.action('add_homework', handleAddHomework);
 bot.action('add_homework_on_date', handleAddHomeworkOnDate);
 bot.action('homework_tomorrow', handleHomeworkTomorrow);
 bot.action('homework_week', handleHomeworkWeek);
+bot.action('history', handleHistory);
+bot.action(/history_week:(\d+)/, handleHistoryWeek);
+bot.action(/history_month:(\d{4}-\d{2})/, handleHistoryMonth);
 bot.action('current_lesson', handleCurrentLesson);
 bot.action('manage_schedule', handleManageSchedule);
 bot.action('admin_manage', handleAdminManage);
@@ -137,8 +143,10 @@ async function startBot() {
     // Синхронизируем модели с БД
     await syncDatabase();
 
-    // Очищаем старые домашние задания (на прошедшие дни)
-    await runCleanup();
+    // P3: прошлое ДЗ больше не удаляем (cleanupOldHomeworks оставлен для ручного запуска).
+    // Ретеншн ленты событий: проверка при старте + in-process джоба раз в 24ч (только user_events).
+    await cleanupOldUserEvents();
+    startUserEventsRetentionJob();
 
     // Запускаем бота
     await bot.launch();

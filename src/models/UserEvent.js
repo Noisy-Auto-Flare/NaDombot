@@ -33,6 +33,17 @@ const UserEvent = sequelize.define(
       type: DataTypes.JSON,
       allowNull: true,
       comment: 'Дополнительные данные события (JSON)'
+    },
+    durationMs: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Длительность обработки апдейта, замер в middleware вокруг next() (P3 §12)'
+    },
+    status: {
+      type: DataTypes.ENUM('ok', 'error'),
+      allowNull: false,
+      defaultValue: 'ok',
+      comment: 'Результат обработки: ok/error (P3 §12)'
     }
   },
   {

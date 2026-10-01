@@ -42,7 +42,7 @@ async function testConnection() {
   }
 }
 
-const SCHEMA_VERSION = 'p2-merge';
+const SCHEMA_VERSION = 'p3-history';
 // Явный список колонок schedules для D2 (id сохраняем обязательно — иначе битые homeworks.scheduleId)
 const CANONICAL_SCHEDULE_COLS = [
   'id',
@@ -331,6 +331,42 @@ async function ensureUserProfileScopeColumn() {
 }
 
 /**
+ * P3 — колонки user_events.durationMs + user_events.status (идемпотентно, без DROP).
+ * Вызывать ДО sequelize.sync(): иначе sync попытается создать таблицу/индекс
+ * с колонками, которых нет в legacy-БД. Backfill существующих → status='ok'.
+ */
+async function ensureUserEventTelemetryColumns() {
+  try {
+    const qi = sequelize.getQueryInterface();
+    const desc = await qi.describeTable('user_events').catch(() => null);
+    if (!desc) return;
+    if (!desc.durationMs) {
+      await qi.addColumn('user_events', 'durationMs', {
+        type: Sequelize.DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null
+      });
+      console.log('✅ Prelim миграция: добавлен user_events.durationMs');
+    }
+    if (!desc.status) {
+      await qi.addColumn('user_events', 'status', {
+        type: Sequelize.DataTypes.ENUM('ok', 'error'),
+        allowNull: false,
+        defaultValue: 'ok'
+      });
+      console.log('✅ Prelim миграция: добавлен user_events.status');
+    }
+    try {
+      await sequelize.query("UPDATE user_events SET status='ok' WHERE status IS NULL OR status=''");
+    } catch (_bf) {
+      void _bf;
+    }
+  } catch (preErr) {
+    console.warn('⚠️ Prelim P3 миграция user_events.durationMs/status:', preErr.message || preErr);
+  }
+}
+
+/**
  * P1 item 1 — колонки subgroups v2 (идемпотентно, без DROP).
  * Вызывать ДО sequelize.sync(): иначе sync упадёт на индексе subgroups_division,
  * когда колонки division ещё нет (legacy-БД со схемой teacherName).
@@ -555,6 +591,12 @@ async function syncDatabase() {
     } catch (_scopePre) {
       void _scopePre;
     }
+    // P3: колонки user_events.durationMs/status ДО sync + backfill 'ok'
+    try {
+      await ensureUserEventTelemetryColumns();
+    } catch (_evPre) {
+      void _evPre;
+    }
     // Безопасный sync без alter — создаёт отсутствующие таблицы, не ломает существующие (SQLite alter в Sequelize 6 криво пересоздаёт UNIQUE).
     // Новые колонки/индексы V6 добавляем вручную ниже (совместимо с sync({alter:true}) по результату, но без бага).
     await sequelize.sync();
@@ -692,6 +734,12 @@ async function syncDatabase() {
       } catch (_scopePreFb) {
         void _scopePreFb;
       }
+      // P3: колонки user_events.durationMs/status до per-model sync + backfill
+      try {
+        await ensureUserEventTelemetryColumns();
+      } catch (_evPreFb) {
+        void _evPreFb;
+      }
       // Синхронизируем только конкретные модели — это поможет создать отсутствующие таблицы
       await Setting.sync();
       await Schedule.sync();
@@ -744,5 +792,6 @@ module.exports = {
   _dedupeByAudience: dedupeByAudience,
   _migrateSubgroupsV2: migrateSubgroupsV2,
   _ensureSubgroupsV2Columns: ensureSubgroupsV2Columns,
-  _ensureUserProfileScopeColumn: ensureUserProfileScopeColumn
+  _ensureUserProfileScopeColumn: ensureUserProfileScopeColumn,
+  _ensureUserEventTelemetryColumns: ensureUserEventTelemetryColumns
 };

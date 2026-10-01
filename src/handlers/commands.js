@@ -15,6 +15,7 @@ async function handleStart(ctx) {
     [{ text: '✚ Добавить ДЗ на дату', callback_data: 'add_homework_on_date' }],
     [{ text: '📅 Домашнее задание на завтра', callback_data: 'homework_tomorrow' }],
     [{ text: '📆 Домашнее задание на неделю', callback_data: 'homework_week' }],
+    [{ text: '📜 История', callback_data: 'history' }],
     [{ text: '🏫 В каком кабинете урок', callback_data: 'current_lesson' }]
   ];
   let profileSummaryLine = '';
@@ -266,7 +267,8 @@ async function handleHelp(ctx) {
     '• Добавить домашнее задание - добавьте ДЗ по любому предмету\n' +
     '• Добавить ДЗ на дату - добавьте ДЗ на выбранную дату из ближайших 2 недель\n' +
     '• Домашнее задание на завтра - просмотр ДЗ на следующий день\n' +
-    '• Домашнее задание на неделю - просмотр ДЗ на всю неделю\n\n';
+    '• Домашнее задание на неделю - просмотр ДЗ на всю неделю\n' +
+    '• История - прошлые задания (недели/месяцы назад)\n\n';
   if (admin) {
     helpText +=
       'Функции администратора:\n' +
@@ -429,6 +431,106 @@ async function handleSelectProfile(ctx) {
   await ctx.scene.enter('selectProfile');
 }
 
+/**
+ * P3 §13.3 — клавиатура навигации истории: неделя назад/вперёд + выбор месяца.
+ * @param {number} weekOffset - текущее недельное окно
+ * @returns {{inline_keyboard: Array}}
+ */
+function historyNavKeyboard(weekOffset) {
+  const { getRecentMonths, HISTORY_MAX_WEEK_OFFSET } = require('../utils/history');
+  const rows = [];
+  const navRow = [];
+  if (weekOffset < HISTORY_MAX_WEEK_OFFSET) {
+    navRow.push({ text: '◀ Неделя назад', callback_data: `history_week:${weekOffset + 1}` });
+  }
+  if (weekOffset > 0) {
+    navRow.push({ text: 'Вперёд ▶', callback_data: `history_week:${weekOffset - 1}` });
+  }
+  if (navRow.length) rows.push(navRow);
+  const months = getRecentMonths(3).map((m) => ({ text: m.label, callback_data: m.callback }));
+  // по 2 кнопки месяцев в ряд
+  for (let i = 0; i < months.length; i += 2) {
+    rows.push(months.slice(i, i + 2));
+  }
+  rows.push([{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]);
+  return { inline_keyboard: rows };
+}
+
+/**
+ * P3 §13.3 — отправить компактную историю чанками, клавиатура на последнем.
+ * @param {object} ctx
+ * @param {string} text - компактный текст истории
+ * @param {{inline_keyboard: Array}} keyboard
+ */
+async function replyHistoryChunks(ctx, text, keyboard) {
+  const { splitHistoryChunks } = require('../utils/history');
+  const parts = splitHistoryChunks(text);
+  for (let i = 0; i < parts.length; i++) {
+    const last = i === parts.length - 1;
+    await ctx.reply(parts[i], last ? { reply_markup: keyboard } : undefined);
+  }
+}
+
+/**
+ * P3 §13.3 — вход в историю: текущее недельное окно (последние 7 дней).
+ * @param {object} ctx
+ */
+async function handleHistory(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    const { getHistoryWeek, formatHistoryCompact } = require('../utils/history');
+    const { days, offset } = await getHistoryWeek(ctx.from.id, 0);
+    await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(offset));
+  } catch (error) {
+    console.error('Ошибка при получении истории:', error);
+    await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
+    });
+  }
+}
+
+/**
+ * P3 §13.3 — недельное окно истории (callback history_week:<offset>).
+ * @param {object} ctx
+ */
+async function handleHistoryWeek(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    const data = (ctx.callbackQuery && ctx.callbackQuery.data) || '';
+    const offset = Number(data.split(':')[1]) || 0;
+    const { getHistoryWeek, formatHistoryCompact } = require('../utils/history');
+    const { days, offset: real } = await getHistoryWeek(ctx.from.id, offset);
+    await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(real));
+  } catch (error) {
+    console.error('Ошибка при получении истории:', error);
+    await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
+    });
+  }
+}
+
+/**
+ * P3 §13.3 — история за календарный месяц (callback history_month:<YYYY-MM>).
+ * @param {object} ctx
+ */
+async function handleHistoryMonth(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    const data = (ctx.callbackQuery && ctx.callbackQuery.data) || '';
+    const ym = (data.split(':')[1] || '').split('-');
+    const year = Number(ym[0]);
+    const month = Number(ym[1]);
+    const { getHistoryMonth, formatHistoryCompact } = require('../utils/history');
+    const { days } = await getHistoryMonth(ctx.from.id, year, month);
+    await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(0));
+  } catch (error) {
+    console.error('Ошибка при получении истории:', error);
+    await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
+    });
+  }
+}
+
 module.exports = {
   handleStart,
   handleHelp,
@@ -447,5 +549,8 @@ module.exports = {
   handleProfileEditClass,
   handleProfileEditTrack,
   handleProfileEditSubgroup,
-  handleProfileReset
+  handleProfileReset,
+  handleHistory,
+  handleHistoryWeek,
+  handleHistoryMonth
 };

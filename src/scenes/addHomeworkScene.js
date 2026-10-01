@@ -433,6 +433,13 @@ const addHomeworkScene = new Scenes.WizardScene(
         date: date.toISOString().split('T')[0],
         content: content
       });
+      // P3: счётчик добавленных ДЗ (путь «Заменить» — не инкрементит, создания нет)
+      try {
+        const { incrementHomeworkCount } = require('../utils/homeworkWrite');
+        await incrementHomeworkCount(ctx.from.id);
+      } catch (_hc) {
+        void _hc;
+      }
 
       const dayOfWeek = getDayOfWeek(date);
       await ctx.reply(

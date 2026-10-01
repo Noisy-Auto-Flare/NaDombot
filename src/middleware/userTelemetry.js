@@ -2,7 +2,8 @@ const { User, UserEvent } = require('../models');
 
 /**
  * Middleware Telegraf — телеметрия пользователя на каждом апдейте.
- * Делает upsert User + создаёт UserEvent. Никогда не блокирует next().
+ * Делает upsert User + создаёт UserEvent с durationMs (замер вокруг next())
+ * и status (ok/error). Никогда не блокирует бота.
  * Корректно обрабатывает апдейты без ctx.from (например channel_post).
  *
  * @param {object} ctx - Telegraf context
@@ -10,9 +11,11 @@ const { User, UserEvent } = require('../models');
  * @returns {Promise<void>}
  */
 async function userTelemetry(ctx, next) {
-  try {
-    if (!ctx.from) return next();
+  const startedAt = Date.now();
+  if (!ctx.from) return next();
 
+  let nextCalled = false;
+  try {
     const now = new Date();
 
     // Короткий payload для lastAction / UserEvent.payload (до 64 симв.)
@@ -46,25 +49,42 @@ async function userTelemetry(ctx, next) {
       });
     }
 
-    // UserEvent — не блокировать next() если упало
+    // Замер длительности вокруг next() (P3 §12: событие = запрос → длительность → результат)
+    let status = 'ok';
     try {
-      await UserEvent.create({
-        userId: ctx.from.id,
-        type,
-        payload: payload?.slice(0, 64) || null,
-        meta: {
-          chatType: ctx.chat?.type || null,
-          text: ctx.message?.text?.slice(0, 200) || null,
-          callbackData: ctx.callbackQuery?.data || null
-        }
-      });
-    } catch (e) {
-      console.error('UserEvent', e.message);
+      nextCalled = true;
+      await next();
+    } catch (nextErr) {
+      status = 'error';
+      throw nextErr;
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      // UserEvent — не блокировать бота если упало
+      try {
+        await UserEvent.create({
+          userId: ctx.from.id,
+          type,
+          payload: payload?.slice(0, 64) || null,
+          meta: {
+            chatType: ctx.chat?.type || null,
+            text: ctx.message?.text?.slice(0, 200) || null,
+            callbackData: ctx.callbackQuery?.data || null
+          },
+          durationMs,
+          status
+        });
+      } catch (e) {
+        console.error('UserEvent', e.message);
+      }
     }
   } catch (e) {
     console.error('userTelemetry', e.message || e);
+    // next() мог не вызваться из-за падения upsert — пробуем пропустить дальше один раз
+    if (!nextCalled) {
+      return next();
+    }
+    throw e;
   }
-  return next();
 }
 
 module.exports = { userTelemetry };

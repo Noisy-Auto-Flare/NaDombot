@@ -166,6 +166,31 @@ async function handleChoiceCallback(ctx, data) {
   return goTextStep(ctx);
 }
 
+/**
+ * Инкремент счётчика добавленных ДЗ пользователя (P3 §12).
+ * Вызывать только в точках Homework.create (путь «Заменить» — не инкрементит,
+ * создания нет). Никогда не роняет вызывающий флоу.
+ * @param {string|number} userId
+ * @returns {Promise<number|null>} новое значение или null при ошибке
+ */
+async function incrementHomeworkCount(userId) {
+  try {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      const fallback = await User.findByPk(String(userId));
+      if (!fallback) return null;
+      await fallback.increment('homeworkCount', { by: 1 });
+      await fallback.reload();
+      return fallback.homeworkCount;
+    }
+    await user.increment('homeworkCount', { by: 1 });
+    await user.reload();
+    return user.homeworkCount;
+  } catch (_e) {
+    return null;
+  }
+}
+
 module.exports = {
   fetchExistingHomework,
   formatRowTime,
@@ -174,5 +199,6 @@ module.exports = {
   existingHomeworkKeyboard,
   replaceHomeworkConditional,
   goTextStep,
-  handleChoiceCallback
+  handleChoiceCallback,
+  incrementHomeworkCount
 };
