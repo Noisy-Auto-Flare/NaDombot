@@ -15,6 +15,11 @@ services:
     networks:
       - homework_network
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
   sqlite_data:

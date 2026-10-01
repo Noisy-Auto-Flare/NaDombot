@@ -6,6 +6,23 @@ const { formatDate, getDayName } = require('../utils/dateUtils');
 const { getRecentLessonRows } = require('../utils/recentLessons');
 
 /**
+ * Опции аудитории для записи (D4): при отсутствии профиля — null (старое поведение,
+ * findBySubjectNormalized без фильтра; при выключенном флаге фильтр тоже не применяется).
+ * @param {object} ctx - Telegraf context
+ * @returns {Promise<object|null>}
+ */
+async function resolveAudienceOpts(ctx) {
+  try {
+    const { getUserProfile } = require('../utils/userProfile');
+    const p = await getUserProfile(ctx.from && ctx.from.id);
+    if (!p || !p.classId) return null;
+    return { classId: p.classId, trackId: p.trackId || null, subgroupId: p.subgroupId || null };
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
  * Короткое название дня недели для клавиатуры дат
  * @param {number} dayOfWeek 0=Пн ... 6=Вс
  * @returns {string}
@@ -127,7 +144,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         const subjectName = row.subjectName;
         ctx.wizard.state.subjectName = subjectName;
         try {
-          const schedules = await scheduleService.findBySubjectNormalized(subjectName);
+          const schedules = await scheduleService.findBySubjectNormalized(subjectName, await resolveAudienceOpts(ctx));
           if (!schedules || schedules.length === 0) {
             await ctx.reply(
               `❌ Предмет "${subjectName}" не найден в расписании.\n\n` +
@@ -196,6 +213,23 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
             });
             return ctx.scene.leave();
           }
+          // D4 quick-путь: выбранный урок должен быть виден профилю (при флаге)
+          try {
+            const { isMultiprofileEnabled } = require('../utils/settings');
+            const { isVisible } = require('../utils/audience');
+            const audienceOpts = await resolveAudienceOpts(ctx);
+            if (audienceOpts && (await isMultiprofileEnabled()) && !isVisible(schedule, audienceOpts)) {
+              await ctx.answerCbQuery();
+              await ctx.reply('❌ Урок не найден. Попробуйте ещё раз.', {
+                reply_markup: {
+                  inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]]
+                }
+              });
+              return ctx.scene.leave();
+            }
+          } catch (_vis) {
+            void _vis;
+          }
 
           // Сохраняем выбор
           const date = new Date(isoDate);
@@ -241,7 +275,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
     ctx.wizard.state.subjectName = subjectName;
 
     try {
-      const schedules = await scheduleService.findBySubjectNormalized(subjectName);
+      const schedules = await scheduleService.findBySubjectNormalized(subjectName, await resolveAudienceOpts(ctx));
 
       if (!schedules || schedules.length === 0) {
         await ctx.reply(

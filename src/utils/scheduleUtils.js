@@ -115,7 +115,7 @@ async function getScheduleForDay(dayOfWeek, userProfile = null) {
  */
 async function getHomeworkForDate(userId, date) {
   const { Homework, UserProfile } = require('../models');
-  const dayOfWeek = getDayOfWeek(date);
+  const dayOfWeek = getMoscowDayOfWeek(date);
 
   // Резолвим профиль пользователя
   let userProfile = null;

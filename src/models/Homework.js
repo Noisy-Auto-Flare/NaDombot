@@ -47,8 +47,7 @@ const Homework = sequelize.define('Homework', {
     },
     {
       fields: ['scheduleId', 'date'],
-      unique: true,
-      name: 'unique_homework_per_date'
+      name: 'idx_homework_schedule_date'
     }
   ]
 });

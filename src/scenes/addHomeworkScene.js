@@ -6,6 +6,22 @@ const scheduleService = require('../services/scheduleService');
 const { getRecentLessonRows } = require('../utils/recentLessons');
 
 /**
+ * Профиль аудитории для записи (D4): при отсутствии профиля/флага — null (старое поведение).
+ * @param {object} ctx - Telegraf context
+ * @returns {Promise<object|null>}
+ */
+async function resolveAudienceProfile(ctx) {
+  try {
+    const { getUserProfile } = require('../utils/userProfile');
+    const p = await getUserProfile(ctx.from && ctx.from.id);
+    if (!p || !p.classId) return null;
+    return p;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
  * Сцена для добавления домашнего задания
  * Шаг 1: Пользователь вводит название предмета
  * Шаг 2: Бот находит ближайший урок и спрашивает подтверждение
@@ -65,7 +81,7 @@ const addHomeworkScene = new Scenes.WizardScene(
         const subjectName = row.subjectName;
         ctx.wizard.state.subjectName = subjectName;
         try {
-          const nextLesson = await findNextLesson(subjectName, new Date());
+          const nextLesson = await findNextLesson(subjectName, new Date(), await resolveAudienceProfile(ctx));
           if (!nextLesson) {
             await ctx.reply(
               `❌ Предмет "${subjectName}" не найден в расписании.\n\n` +
@@ -131,7 +147,7 @@ const addHomeworkScene = new Scenes.WizardScene(
 
     try {
       // Ищем ближайший урок по этому предмету
-      const nextLesson = await findNextLesson(subjectName, new Date());
+      const nextLesson = await findNextLesson(subjectName, new Date(), await resolveAudienceProfile(ctx));
 
       if (!nextLesson) {
         await ctx.reply(
