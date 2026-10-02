@@ -397,7 +397,7 @@ async function ensureSubgroupsV2Columns() {
 
 /**
  * P1 item 1 — миграция subgroups на схему v2 (идемпотентная добивка, без DROP).
- * Старые строки belova/ferfarova: `division='Английский язык'`, `teacherName→teacher`,
+  * Старые строки belova/firfarova: `division='Английский язык'`, `teacherName→teacher`,
  * `name` из учителя; `id` стабильны, `schedules.subgroupId` не трогаем.
  * Legacy-колонка `teacherName` остаётся в файле БД (не мешает, sync без alter её не дропает).
  */
@@ -461,8 +461,8 @@ async function seedFoundationIdempotent() {
     defaults: { division: 'Английский язык', name: 'Белова', teacher: 'Белова Ирина Николаевна', subject: 'английский', classId: null, active: true }
   });
   await Subgroup.findOrCreate({
-    where: { id: 'ferfarova' },
-    defaults: { division: 'Английский язык', name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна', subject: 'английский', classId: null, active: true }
+    where: { id: 'firfarova' },
+    defaults: { division: 'Английский язык', name: 'Фирфарова', teacher: 'Фирфарова Валерия Михайловна', subject: 'английский', classId: null, active: true }
   });
   // Бэкфилл существующих schedule без classId (legacy rows)
   try {

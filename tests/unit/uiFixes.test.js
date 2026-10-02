@@ -53,12 +53,12 @@ describe('UI fixes F1/F4/F5', () => {
     test('нет кнопки select_subgroup:null', () => {
       const kb = buildSubgroupKeyboard([
         { id: 'belova', teacher: 'Белова' },
-        { id: 'ferfarova', teacher: 'Ферфарова' }
+        { id: 'firfarova', teacher: 'Фирфарова' }
       ]);
       const flat = kb.flat().map((b) => b.callback_data);
       expect(flat).not.toContain('select_subgroup:null');
       expect(flat).toContain('select_subgroup:belova');
-      expect(flat).toContain('select_subgroup:ferfarova');
+      expect(flat).toContain('select_subgroup:firfarova');
     });
   });
 });

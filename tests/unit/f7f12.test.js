@@ -20,7 +20,7 @@ jest.mock('../../src/utils/scheduleUtils', () => {
       ]),
       subgroupNames: new Map([
         ['belova', { name: 'Белова', teacher: 'Белова Ирина Николаевна' }],
-        ['ferfarova', { name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна' }]
+        ['firfarova', { name: 'Фирфарова', teacher: 'Фирфарова Валерия Михайловна' }]
       ])
     })
   };
@@ -46,7 +46,7 @@ const TAG_CTX = {
   ]),
   subgroupNames: new Map([
     ['belova', { name: 'Белова', teacher: 'Белова Ирина Николаевна' }],
-    ['ferfarova', { name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна' }]
+    ['firfarova', { name: 'Фирфарова', teacher: 'Фирфарова Валерия Михайловна' }]
   ])
 };
 
@@ -65,7 +65,7 @@ const EN_BELOVA = {
   trackId: null,
   subgroupId: 'belova'
 };
-const EN_FERFAROVA = {
+const EN_FIRFAROVA = {
   id: 12,
   classId: '10А',
   dayOfWeek: 2,
@@ -73,7 +73,7 @@ const EN_FERFAROVA = {
   subjectName: 'Английский',
   room: 'библ',
   trackId: null,
-  subgroupId: 'ferfarova'
+  subgroupId: 'firfarova'
 };
 
 describe('F8: клавиатура треков без кнопки Общий', () => {
@@ -120,7 +120,7 @@ describe('F10: теги в quick-pick', () => {
 
 describe('F11: умный disambiguation', () => {
   test('только подгруппа различается → true (кабинет не ось)', () => {
-    expect(isSubgroupOnlyChoice([EN_BELOVA, EN_FERFAROVA])).toBe(true);
+    expect(isSubgroupOnlyChoice([EN_BELOVA, EN_FIRFAROVA])).toBe(true);
   });
 
   test('разные треки → false (общий список)', () => {
@@ -131,18 +131,18 @@ describe('F11: умный disambiguation', () => {
 
   test('один вариант / разные слоты → false', () => {
     expect(isSubgroupOnlyChoice([EN_BELOVA])).toBe(false);
-    expect(isSubgroupOnlyChoice([{ ...EN_BELOVA }, { ...EN_FERFAROVA, lessonNumber: 4 }])).toBe(false);
+    expect(isSubgroupOnlyChoice([{ ...EN_BELOVA }, { ...EN_FIRFAROVA, lessonNumber: 4 }])).toBe(false);
   });
 
   test('addHomework: ветка учителя — «У кого именно?», кнопки-учителя, callback hw_pick жив', async () => {
     const ctx = mockCtx();
-    await showVariantPicker(ctx, 'Английский', [EN_BELOVA, EN_FERFAROVA]);
+    await showVariantPicker(ctx, 'Английский', [EN_BELOVA, EN_FIRFAROVA]);
     expect(ctx.reply).toHaveBeenCalledTimes(1);
     const [text, extra] = ctx.reply.mock.calls[0];
     expect(text).toContain('у кого именно?');
     const buttons = extra.reply_markup.inline_keyboard.flat();
     expect(buttons.map((b) => b.text)).toEqual(
-      expect.arrayContaining(['Белова Ирина Николаевна', 'Ферфарова Валерия Михайловна'])
+      expect.arrayContaining(['Белова Ирина Николаевна', 'Фирфарова Валерия Михайловна'])
     );
     expect(buttons.map((b) => b.callback_data)).toEqual(
       expect.arrayContaining(['hw_pick:11', 'hw_pick:12'])
@@ -163,7 +163,7 @@ describe('F11: умный disambiguation', () => {
 
   test('on-date: заголовок — человеческая дата, ветка учителя', async () => {
     const ctx = mockCtx();
-    await showDateVariantPicker(ctx, '2026-10-07', [EN_BELOVA, EN_FERFAROVA]);
+    await showDateVariantPicker(ctx, '2026-10-07', [EN_BELOVA, EN_FIRFAROVA]);
     const [text, extra] = ctx.reply.mock.calls[0];
     expect(text).toContain('Ср, 07.10');
     expect(text).not.toContain('2026-10-07');
@@ -192,7 +192,7 @@ describe('F12: читаемость on-date', () => {
 
   test('кнопка даты: «· 2 вар.» вместо (?)', () => {
     const baseDate = new Date(2026, 9, 6, 12, 0, 0, 0); // Вт 06.10
-    const kb = buildDateKeyboard([EN_BELOVA, EN_FERFAROVA], baseDate, true);
+    const kb = buildDateKeyboard([EN_BELOVA, EN_FIRFAROVA], baseDate, true);
     const texts = kb.flat().map((b) => b.text);
     expect(texts).toEqual(expect.arrayContaining(['Ср 07.10 · 2 вар.']));
     expect(texts.join(' ')).not.toContain('(?)');

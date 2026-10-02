@@ -41,7 +41,7 @@ let bio;
 let informTech;
 let informSoc;
 let engBelova;
-let engFerfarova;
+let engFirfarova;
 
 beforeAll(async () => {
   await syncDatabase();
@@ -64,23 +64,23 @@ beforeAll(async () => {
     dayOfWeek: 2, lessonNumber: 3, subjectName: 'Английский', room: '4005',
     classId: '10А', trackId: null, subgroupId: 'belova'
   });
-  engFerfarova = await scheduleService.create({
+  engFirfarova = await scheduleService.create({
     dayOfWeek: 2, lessonNumber: 3, subjectName: 'Английский', room: 'библ',
-    classId: '10А', trackId: null, subgroupId: 'ferfarova'
+    classId: '10А', trackId: null, subgroupId: 'firfarova'
   });
 
   await User.create({ userId: TECH, firstName: 'Ivan', username: 'ivan' });
   await User.create({ userId: SOC, firstName: 'Petr', username: 'petr' });
   await User.create({ userId: OBS, firstName: 'Observer', username: 'observer' });
   await setUserProfile(TECH, { classId: '10А', trackId: 'tech', subgroupId: 'belova', scope: 'own' });
-  await setUserProfile(SOC, { classId: '10А', trackId: 'soc', subgroupId: 'ferfarova', scope: 'own' });
+  await setUserProfile(SOC, { classId: '10А', trackId: 'soc', subgroupId: 'firfarova', scope: 'own' });
   await setUserProfile(OBS, { classId: '10А', trackId: null, subgroupId: null, scope: 'all' });
 
   // чужие строки для проверок видимости (точные даты — напрямую, без toISOString-сдвига сцены)
   await Homework.create({ userId: TECH, scheduleId: bio.id, date: MONDAY_STR, content: 'био от теха' });
   await Homework.create({ userId: SOC, scheduleId: informSoc.id, date: MONDAY_STR, content: 'прога соц' });
   await Homework.create({ userId: TECH, scheduleId: engBelova.id, date: WEDNESDAY_STR, content: 'белова текст' });
-  await Homework.create({ userId: SOC, scheduleId: engFerfarova.id, date: WEDNESDAY_STR, content: 'ферфарова текст' });
+  await Homework.create({ userId: SOC, scheduleId: engFirfarova.id, date: WEDNESDAY_STR, content: 'фирфарова текст' });
 });
 
 afterAll(async () => {
@@ -190,14 +190,14 @@ describe('A3: наблюдатель видит обе строки с тега�
     expect(text).toContain('прога соц');
   });
 
-  test('Ср слот 3: Английский [Белова] + Английский [Ферфарова]', async () => {
+  test('Ср слот 3: Английский [Белова] + Английский [Фирфарова]', async () => {
     const data = await getHomeworkForDate(OBS, WEDNESDAY);
     const tagCtx = await getTagContext();
     const text = formatHomeworkMerged(data, tagCtx);
     expect(text).toContain('3. Английский — каб. 4005 [Белова]');
-    expect(text).toContain('3. Английский — каб. библ [Ферфарова]');
+    expect(text).toContain('3. Английский — каб. библ [Фирфарова]');
     expect(text).toContain('белова текст');
-    expect(text).toContain('ферфарова текст');
+    expect(text).toContain('фирфарова текст');
   });
 
   test('personal + all: уроки все видны, чужие тексты — нет', async () => {

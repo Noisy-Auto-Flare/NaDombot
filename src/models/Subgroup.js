@@ -19,7 +19,7 @@ const Subgroup = sequelize.define(
       type: DataTypes.STRING(40),
       primaryKey: true,
       allowNull: false,
-       comment: 'Идентификатор подгруппы (belova, ferfarova)'
+       comment: 'Идентификатор подгруппы (belova, firfarova)'
     },
     division: {
       type: DataTypes.STRING(100),
