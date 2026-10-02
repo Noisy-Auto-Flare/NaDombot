@@ -10,8 +10,8 @@ async function ensureBase() {
   await Class.findOrCreate({ where:{id:'10А'}, defaults:{id:'10А', grade:10, letter:'А', enabled:true}});
   await Track.findOrCreate({ where:{id:'tech', classId:'10А'}, defaults:{id:'tech', classId:'10А', name:'Технологический'}});
   await Track.findOrCreate({ where:{id:'soc', classId:'10А'}, defaults:{id:'soc', classId:'10А', name:'Социально-экономический'}});
-  await Subgroup.findOrCreate({ where:{id:'belova'}, defaults:{id:'belova', division:'Английский язык', name:'Белова', teacher:'Белова', subject:'английский', classId:null, active:true}});
-  await Subgroup.findOrCreate({ where:{id:'petrova'}, defaults:{id:'petrova', division:'Английский язык', name:'Петрова', teacher:'Петрова', subject:'английский', classId:null, active:true}});
+  await Subgroup.findOrCreate({ where:{id:'belova'}, defaults:{id:'belova', division:'Английский язык', name:'Белова', teacher:'Белова Ирина Николаевна', subject:'английский', classId:null, active:true}});
+  await Subgroup.findOrCreate({ where:{id:'ferfarova'}, defaults:{id:'ferfarova', division:'Английский язык', name:'Ферфарова', teacher:'Ферфарова Валерия Михайловна', subject:'английский', classId:null, active:true}});
   await Setting.upsert({key:'multiprofile_enabled', value:'1'});
 }
 
@@ -38,7 +38,7 @@ const SCHEDULE = [
   {dayOfWeek:2, lessonNumber:1, subjectName:'Физика спец', room:'4003', classId:'10А', trackId:'tech', subgroupId:null},
   {dayOfWeek:2, lessonNumber:2, subjectName:'ОБЗР', room:'4013', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:2, lessonNumber:3, subjectName:'Английский', room:'4005', classId:'10А', trackId:null, subgroupId:'belova'},
-  {dayOfWeek:2, lessonNumber:3, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'petrova'},
+  {dayOfWeek:2, lessonNumber:3, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'ferfarova'},
   {dayOfWeek:2, lessonNumber:4, subjectName:'Алгебра', room:'3046', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:2, lessonNumber:5, subjectName:'Проект', room:'3028', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:2, lessonNumber:6, subjectName:'Обществознание', room:'3028', classId:'10А', trackId:'tech', subgroupId:null},
@@ -48,13 +48,13 @@ const SCHEDULE = [
   {dayOfWeek:3, lessonNumber:2, subjectName:'История', room:'3028', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:3, lessonNumber:3, subjectName:'Геометрия', room:'3046', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:3, lessonNumber:4, subjectName:'Английский', room:'4005', classId:'10А', trackId:null, subgroupId:'belova'},
-  {dayOfWeek:3, lessonNumber:4, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'petrova'},
+  {dayOfWeek:3, lessonNumber:4, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'ferfarova'},
   {dayOfWeek:3, lessonNumber:5, subjectName:'Алгебра', room:'3046', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:3, lessonNumber:6, subjectName:'Русский', room:'3018', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:3, lessonNumber:7, subjectName:'Литература', room:'3018', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:4, lessonNumber:1, subjectName:'Физика', room:'4003', classId:'10А', trackId:null, subgroupId:null},
   {dayOfWeek:4, lessonNumber:2, subjectName:'Английский', room:'4005', classId:'10А', trackId:null, subgroupId:'belova'},
-  {dayOfWeek:4, lessonNumber:2, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'petrova'},
+  {dayOfWeek:4, lessonNumber:2, subjectName:'Английский', room:'библ', classId:'10А', trackId:null, subgroupId:'ferfarova'},
   {dayOfWeek:4, lessonNumber:3, subjectName:'Информатика', room:'1058', classId:'10А', trackId:'tech', subgroupId:null},
   {dayOfWeek:4, lessonNumber:3, subjectName:'Обществознание', room:'3021', classId:'10А', trackId:'soc', subgroupId:null},
   {dayOfWeek:4, lessonNumber:4, subjectName:'Литература', room:'3018', classId:'10А', trackId:null, subgroupId:null},

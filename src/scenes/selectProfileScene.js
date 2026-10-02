@@ -17,6 +17,20 @@ const CANCEL_NAV_KEYBOARD = {
 const SCOPE_OWN = 'select_scope:own';
 const SCOPE_ALL = 'select_scope:all';
 
+/**
+ * Гашение протухшей клавиатуры исходного сообщения (F9): пустая клавиатура,
+ * чтобы старые кнопки больше не срабатывали повторно. Всё в try/catch.
+ * @param {object} ctx
+ * @returns {Promise<void>}
+ */
+async function dismissKeyboard(ctx) {
+  try {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  } catch (_e) {
+    void _e;
+  }
+}
+
 function buildClassKeyboard(classes) {
   const kb = [];
   for (const c of classes) {
@@ -31,7 +45,6 @@ function buildTrackKeyboard(tracks) {
   for (const t of tracks) {
     kb.push([{ text: t.name, callback_data: `select_track:${t.id}` }]);
   }
-  kb.push([{ text: 'Общий', callback_data: 'select_track:null' }]);
   kb.push([{ text: '👀 Видеть всё', callback_data: SCOPE_ALL }]);
   kb.push([{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]);
   return kb;
@@ -67,6 +80,7 @@ async function showScopeFork(ctx) {
  * @returns {Promise<void>}
  */
 async function saveScopeAll(ctx) {
+  await dismissKeyboard(ctx);
   const editMode = ctx.wizard.state.editMode || ctx.scene.state.edit;
   const original = ctx.wizard.state.originalProfile;
   const classId = ctx.wizard.state.classId || (original && original.classId);
@@ -93,6 +107,7 @@ async function saveScopeAll(ctx) {
 }
 
 async function finalizeProfile(ctx, subgroupId) {
+  await dismissKeyboard(ctx);
   const { classId, trackId } = ctx.wizard.state;
   // normalize literal "null"
   const finalSubgroupId = subgroupId === 'null' ? null : subgroupId;
@@ -170,6 +185,7 @@ async function finalizeProfile(ctx, subgroupId) {
  * @param {object} ctx
  */
 async function showOwnNextStep(ctx) {
+  await dismissKeyboard(ctx);
   ctx.wizard.state.scopeChoice = 'own';
   const goTrackStep = () => {
     if (typeof ctx.wizard.selectStep === 'function') ctx.wizard.selectStep(3);
@@ -381,6 +397,7 @@ const selectProfileScene = new Scenes.WizardScene(
       }
       if (data.startsWith('select_class:')) {
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         const classId = data.split(':').slice(1).join(':');
         ctx.wizard.state.classId = classId;
         await showForkAndGo(ctx);
@@ -436,6 +453,7 @@ const selectProfileScene = new Scenes.WizardScene(
       }
       if (data.startsWith('select_track:')) {
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         const trackId = data.split(':').slice(1).join(':');
         ctx.wizard.state.trackId = trackId;
         const editMode = ctx.wizard.state.editMode;
@@ -488,6 +506,7 @@ const selectProfileScene = new Scenes.WizardScene(
       if (data.startsWith('select_subgroup:')) {
         // это случай когда трек был скипнут и второй шаг уже ждёт подгруппу (grade<10) или edit subgroup direct
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         const subgroupId = data.split(':').slice(1).join(':');
         // for edit subgroup, finalize with original class/track
         const editMode = ctx.wizard.state.editMode;
@@ -546,6 +565,7 @@ const selectProfileScene = new Scenes.WizardScene(
       }
       if (data.startsWith('select_subgroup:')) {
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         const subgroupId = data.split(':').slice(1).join(':');
         return finalizeProfile(ctx, subgroupId);
       }
@@ -556,6 +576,7 @@ const selectProfileScene = new Scenes.WizardScene(
 
 module.exports = selectProfileScene;
 module.exports.buildSubgroupKeyboard = buildSubgroupKeyboard;
+module.exports.dismissKeyboard = dismissKeyboard;
 module.exports.buildTrackKeyboard = buildTrackKeyboard;
 module.exports.buildClassKeyboard = buildClassKeyboard;
 module.exports.CANCEL_NAV_KEYBOARD = CANCEL_NAV_KEYBOARD;

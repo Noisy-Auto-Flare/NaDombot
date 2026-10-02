@@ -2,10 +2,10 @@ const logger = require('../utils/logger');
 const { Scenes } = require('telegraf');
 const { Homework } = require('../models');
 const { findNextLesson, getTagContext } = require('../utils/scheduleUtils');
-const { buildAudienceTag } = require('../utils/audience');
+const { buildAudienceTag, isSubgroupOnlyChoice } = require('../utils/audience');
 const { formatDate, getDayName, getDayOfWeek, getNextDayOfWeek } = require('../utils/dateUtils');
 const scheduleService = require('../services/scheduleService');
-const { getRecentLessonRows } = require('../utils/recentLessons');
+const { getRecentLessonRows, buildQuickPickLabel } = require('../utils/recentLessons');
 const {
   fetchExistingHomework,
   formatExistingHomeworkText,
@@ -13,6 +13,20 @@ const {
   replaceHomeworkConditional,
   handleChoiceCallback
 } = require('../utils/homeworkWrite');
+
+/**
+ * Гашение протухшей клавиатуры исходного сообщения (F9): пустая клавиатура,
+ * чтобы старые кнопки больше не срабатывали повторно. Всё в try/catch.
+ * @param {object} ctx - Telegraf context
+ * @returns {Promise<void>}
+ */
+async function dismissKeyboard(ctx) {
+  try {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  } catch (_e) {
+    void _e;
+  }
+}
 
 /**
  * Профиль аудитории для записи (D4): при отсутствии профиля/флага — null (старое поведение).
@@ -94,6 +108,21 @@ async function showVariantPicker(ctx, subjectName, variants) {
   } catch (_e) {
     tagCtx = null;
   }
+  ctx.wizard.state.pendingPick = variants.map((s) => s.id);
+  // F11: различаются только подгруппой → явный вопрос «У кого именно?» с кнопками-учителями
+  if (isSubgroupOnlyChoice(variants)) {
+    const subMap = (tagCtx && tagCtx.subgroupNames) || new Map();
+    const keyboard = variants.map((s) => {
+      const info = subMap.get(s.subgroupId) || {};
+      const label = info.teacher || info.name || s.subgroupId || s.subjectName;
+      return [{ text: label, callback_data: `hw_pick:${s.id}` }];
+    });
+    keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
+    await ctx.reply(`📚 ${subjectName}: у кого именно?`, {
+      reply_markup: { inline_keyboard: keyboard }
+    });
+    return;
+  }
   const shortDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
   const keyboard = variants.map((s) => {
     const tag = buildAudienceTag(s, tagCtx || {}, tagCtx || {});
@@ -101,7 +130,6 @@ async function showVariantPicker(ctx, subjectName, variants) {
     return [{ text: label, callback_data: `hw_pick:${s.id}` }];
   });
   keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
-  ctx.wizard.state.pendingPick = variants.map((s) => s.id);
   await ctx.reply(`📚 ${subjectName}: несколько вариантов — выбери:`, {
     reply_markup: { inline_keyboard: keyboard }
   });
@@ -221,14 +249,21 @@ const addHomeworkScene = new Scenes.WizardScene(
     // Шаг 1: Запрашиваем название предмета + быстрые кнопки последних уроков
     let quickRows = [];
     try {
-      quickRows = await getRecentLessonRows({ limit: 4, now: new Date() });
+      const quickProfile = await resolveAudienceProfile(ctx);
+      quickRows = await getRecentLessonRows({ limit: 4, now: new Date(), profile: quickProfile });
     } catch (e) {
       logger.error('quick rows error', e);
       quickRows = [];
     }
+    let quickTagCtx = null;
+    try {
+      quickTagCtx = await getTagContext();
+    } catch (_e) {
+      quickTagCtx = null;
+    }
     const keyboard = [];
     for (const row of quickRows) {
-      keyboard.push([{ text: `📚 ${row.subjectName} (${row.lessonNumber} урок)`, callback_data: `quick:${row.id}` }]);
+      keyboard.push([{ text: buildQuickPickLabel(row, quickTagCtx), callback_data: `quick:${row.id}` }]);
     }
     keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
 
@@ -251,6 +286,7 @@ const addHomeworkScene = new Scenes.WizardScene(
       if (data.startsWith('hw_pick:')) {
         const id = Number(data.split(':')[1]);
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         let row = null;
         try {
           row = await scheduleService.findById(id);
@@ -280,6 +316,7 @@ const addHomeworkScene = new Scenes.WizardScene(
           return;
         }
         await ctx.answerCbQuery();
+        await dismissKeyboard(ctx);
         // quick-выбор — конкретный урок, disambiguation не нужен
         await proceedWithSchedule(ctx, row);
         return;
@@ -468,3 +505,5 @@ const addHomeworkScene = new Scenes.WizardScene(
 );
 
 module.exports = addHomeworkScene;
+module.exports.showVariantPicker = showVariantPicker;
+module.exports.dismissKeyboard = dismissKeyboard;

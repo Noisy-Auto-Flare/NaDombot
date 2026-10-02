@@ -4,9 +4,9 @@ const { Homework } = require('../models');
 const scheduleService = require('../services/scheduleService');
 const { getMoscowNow, getMoscowDayOfWeek } = require('../utils/moscowTime');
 const { formatDate, getDayName } = require('../utils/dateUtils');
-const { getRecentLessonRows } = require('../utils/recentLessons');
+const { getRecentLessonRows, buildQuickPickLabel } = require('../utils/recentLessons');
 const { getTagContext } = require('../utils/scheduleUtils');
-const { buildAudienceTag } = require('../utils/audience');
+const { buildAudienceTag, isSubgroupOnlyChoice } = require('../utils/audience');
 const {
   fetchExistingHomework,
   formatExistingHomeworkText,
@@ -14,6 +14,20 @@ const {
   replaceHomeworkConditional,
   handleChoiceCallback
 } = require('../utils/homeworkWrite');
+
+/**
+ * Гашение протухшей клавиатуры исходного сообщения (F9): пустая клавиатура,
+ * чтобы старые кнопки больше не срабатывали повторно. Всё в try/catch.
+ * @param {object} ctx - Telegraf context
+ * @returns {Promise<void>}
+ */
+async function dismissKeyboard(ctx) {
+  try {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  } catch (_e) {
+    void _e;
+  }
+}
 
 /**
  * Опции аудитории для записи (D4 + P2 scope): при отсутствии профиля — null
@@ -71,7 +85,7 @@ function buildDateKeyboard(schedules, baseDate, isAll = false) {
 
     if (isAll && matching.length > 1) {
       buttons.push({
-        text: `${label} (?)`,
+        text: `${label} · ${matching.length} вар.`,
         callback_data: `hw_variants:${isoDate}`
       });
     } else {
@@ -91,6 +105,23 @@ function buildDateKeyboard(schedules, baseDate, isAll = false) {
   keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
 
   return keyboard;
+}
+
+/**
+ * Человекочитаемая метка даты для пикера вариантов (F12): «Ср, 07.10», не ISO.
+ * @param {string} isoDate - YYYY-MM-DD
+ * @returns {string}
+ */
+function humanDateLabel(isoDate) {
+  try {
+    const [y, m, d] = String(isoDate).split('-').map(Number);
+    const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    return `${getShortDayName(getMoscowDayOfWeek(dt))}, ${dd}.${mm}`;
+  } catch (_e) {
+    return String(isoDate);
+  }
 }
 
 /**
@@ -146,14 +177,29 @@ async function showDateVariantPicker(ctx, isoDate, matching) {
   } catch (_e) {
     tagCtx = null;
   }
+  const humanDate = humanDateLabel(isoDate);
+  ctx.wizard.state.pendingVariants = matching.map((s) => s.id);
+  // F11: различаются только подгруппой → явный вопрос «У кого именно?» с кнопками-учителями
+  if (isSubgroupOnlyChoice(matching)) {
+    const subMap = (tagCtx && tagCtx.subgroupNames) || new Map();
+    const keyboard = matching.map((s) => {
+      const info = subMap.get(s.subgroupId) || {};
+      const label = info.teacher || info.name || s.subgroupId || s.subjectName;
+      return [{ text: label, callback_data: `hw_variant:${s.id}:${isoDate}` }];
+    });
+    keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
+    await ctx.reply(`📚 ${humanDate}: у кого именно?`, {
+      reply_markup: { inline_keyboard: keyboard }
+    });
+    return;
+  }
   const keyboard = matching.map((s) => {
     const tag = buildAudienceTag(s, tagCtx || {}, tagCtx || {});
     const label = `${tag || s.subjectName} · ${s.lessonNumber} ур.`;
     return [{ text: label, callback_data: `hw_variant:${s.id}:${isoDate}` }];
   });
   keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
-  ctx.wizard.state.pendingVariants = matching.map((s) => s.id);
-  await ctx.reply(`📚 ${isoDate}: несколько вариантов — выбери:`, {
+  await ctx.reply(`📚 ${humanDate}: несколько вариантов — выбери:`, {
     reply_markup: { inline_keyboard: keyboard }
   });
 }
@@ -174,14 +220,21 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
     let quickRows = [];
     try {
-      quickRows = await getRecentLessonRows({ limit: 4, now: new Date() });
+      const quickProfile = await resolveAudienceOpts(ctx);
+      quickRows = await getRecentLessonRows({ limit: 4, now: new Date(), profile: quickProfile });
     } catch (e) {
       logger.error('quick rows error', e);
       quickRows = [];
     }
+    let quickTagCtx = null;
+    try {
+      quickTagCtx = await getTagContext();
+    } catch (_e) {
+      quickTagCtx = null;
+    }
     const keyboard = [];
     for (const row of quickRows) {
-      keyboard.push([{ text: `📚 ${row.subjectName} (${row.lessonNumber} урок)`, callback_data: `quick:${row.id}` }]);
+      keyboard.push([{ text: buildQuickPickLabel(row, quickTagCtx), callback_data: `quick:${row.id}` }]);
     }
     keyboard.push([{ text: '❌ Отменить', callback_data: 'homework_cancel' }]);
 
@@ -228,6 +281,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           return;
         }
         await ctx.answerCbQuery();
+        await dismissKeyboard(ctx);
         const subjectName = row.subjectName;
         ctx.wizard.state.subjectName = subjectName;
         try {
@@ -286,6 +340,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       // Уточнение варианта на дату: hw_variants:YYYY-MM-DD
       if (data.startsWith('hw_variants:')) {
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         const isoDate = data.split(':')[1];
         const subjectName = ctx.wizard.state.subjectName;
         try {
@@ -314,6 +369,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         const scheduleId = Number(parts[1]);
         const isoDate = parts[2];
         await ctx.answerCbQuery().catch(() => {});
+        await dismissKeyboard(ctx);
         if (!(ctx.wizard.state.pendingVariants || []).includes(scheduleId)) {
           await ctx.reply('❌ Вариант не найден. Попробуйте ещё раз.');
           return;
@@ -378,6 +434,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
           await ctx.answerCbQuery();
 
+          await dismissKeyboard(ctx);
           await proceedWithScheduleDate(ctx, schedule, date);
           return;
         } catch (error) {
@@ -450,7 +507,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
       await ctx.reply(
         `📅 Выберите дату для предмета "${subjectName}" на ближайшие 2 недели:\n\nПоказаны только дни с уроком (начиная с завтра):` +
-          (isAll ? '\n\nДаты со знаком (?) — несколько вариантов, уточню после выбора.' : ''),
+          (isAll ? '\n\nДаты с пометкой «· N вар.» — несколько вариантов, уточню после выбора.' : ''),
         {
           reply_markup: {
             inline_keyboard: keyboard
@@ -625,3 +682,7 @@ async function isWriteScopeAll(ctx) {
 }
 
 module.exports = addHomeworkOnDateScene;
+module.exports.buildDateKeyboard = buildDateKeyboard;
+module.exports.showDateVariantPicker = showDateVariantPicker;
+module.exports.humanDateLabel = humanDateLabel;
+module.exports.dismissKeyboard = dismissKeyboard;

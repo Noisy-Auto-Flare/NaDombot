@@ -2,14 +2,18 @@ const { getMoscowNow, parseHHMM } = require('./moscowTime');
 const LessonTimeService = require('../services/LessonTimeService');
 const scheduleService = require('../services/scheduleService');
 const { getQuickPickThreshold } = require('./quickPickSettings');
+const { buildAudienceTag } = require('./audience');
 
 /**
  * Получить последние прошедшие уроки сегодня (до 4)
  * Упорядочены от раннего к позднему, нижняя — самый последний перед now.
- * @param {{limit?:number, now?:Date}} options
+ * При переданном профиле и включённом флаге multiprofile — фильтрует через
+ * isVisible (чужой аудитории нет в быстрых кнопках); без профиля/флага — как раньше.
+ * Логика passed/threshold/limit — без изменений.
+ * @param {{limit?:number, now?:Date, profile?:object|null}} options
  * @returns {Promise<Array>} массив Schedule (до limit штук)
  */
-async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
+async function getRecentLessonRows({ limit = 4, now = new Date(), profile = null } = {}) {
   const nowMoscow = getMoscowNow(now);
   const nowMinutes = parseHHMM(nowMoscow.hhmm);
 
@@ -22,6 +26,29 @@ async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
 
   if (todayRows.length === 0) return [];
 
+  // F10: фильтр по аудитории (только при профиле + включённом флаге)
+  let visibleRows = todayRows;
+  if (profile && profile.classId) {
+    let enabled = false;
+    try {
+      const { isMultiprofileEnabled } = require('./settings');
+      enabled = await isMultiprofileEnabled();
+    } catch (_e) {
+      enabled = false;
+    }
+    if (enabled) {
+      try {
+        const { isVisible } = require('./audience');
+        visibleRows = todayRows.filter((r) => isVisible(r, profile));
+      } catch (_e) {
+        visibleRows = todayRows;
+      }
+    }
+  }
+
+  if (visibleRows.length === 0) return [];
+  const todayRowsFiltered = visibleRows;
+
   let thresholdMinutes;
   try {
     const thresholdStr = await getQuickPickThreshold();
@@ -31,10 +58,10 @@ async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
   }
 
   if (nowMinutes >= thresholdMinutes) {
-    return todayRows;
+    return todayRowsFiltered;
   }
 
-  const passed = todayRows.filter((row) => {
+  const passed = todayRowsFiltered.filter((row) => {
     const bell = bellMap.get(row.lessonNumber);
     if (!bell) return false;
     try {
@@ -47,7 +74,7 @@ async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
 
   if (passed.length === 0) {
     // До первого урока — показать первые до 4 уроков сегодня чтобы кнопки не были пустыми
-    return todayRows.slice(0, limit);
+    return todayRowsFiltered.slice(0, limit);
   }
 
   if (passed.length > limit) {
@@ -57,4 +84,21 @@ async function getRecentLessonRows({ limit = 4, now = new Date() } = {}) {
   return passed;
 }
 
-module.exports = { getRecentLessonRows };
+module.exports = { getRecentLessonRows, buildQuickPickLabel };
+
+/**
+ * Текст быстрой кнопки урока с тегом аудитории (F10):
+ * `📚 Английский [Белова] (3 урок)`; общие уроки — без тега. Чистая функция.
+ * @param {object} row - строка расписания
+ * @param {object|null} tagCtx - контекст тегов (getTagContext), null → без тега
+ * @returns {string}
+ */
+function buildQuickPickLabel(row, tagCtx) {
+  let tag = '';
+  try {
+    tag = buildAudienceTag(row, tagCtx || {}, tagCtx || {}) || '';
+  } catch (_e) {
+    tag = '';
+  }
+  return `📚 ${row.subjectName}${tag ? ` ${tag}` : ''} (${row.lessonNumber} урок)`;
+}

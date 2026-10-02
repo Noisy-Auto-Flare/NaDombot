@@ -96,6 +96,7 @@ function getAudienceWhere(userProfile) {
 module.exports = {
   isVisible,
   isVisibleWithScope,
+  isSubgroupOnlyChoice,
   getEffectiveScope,
   buildAudienceTag,
   shortTrackLabel,
@@ -136,6 +137,27 @@ function isVisibleWithScope(schedule, userProfile, multiprofileEnabled) {
     return sClass === uClass;
   }
   return isVisible(schedule, userProfile);
+}
+
+/**
+ * Отличаются ли варианты расписания ТОЛЬКО подгруппой (F11, без хардкода предмета):
+ * класс/день/урок/трек/предмет совпадают, а subgroupId — разные (≥2).
+ * Кабинет не сравниваем: он следует за подгруппой, а не ось выбора.
+ * @param {Array} variants - строки расписания (Sequelize или plain)
+ * @returns {boolean}
+ */
+function isSubgroupOnlyChoice(variants) {
+  if (!Array.isArray(variants) || variants.length < 2) return false;
+  const norm = (v) => (v == null ? '' : String(v));
+  const first = variants[0];
+  const base = `${norm(first.classId)}|${first.dayOfWeek}|${first.lessonNumber}|${norm(first.trackId)}|${norm(first.subjectName)}`;
+  const subs = new Set();
+  for (const v of variants) {
+    const key = `${norm(v.classId)}|${v.dayOfWeek}|${v.lessonNumber}|${norm(v.trackId)}|${norm(v.subjectName)}`;
+    if (key !== base) return false;
+    subs.add(norm(v.subgroupId));
+  }
+  return subs.size > 1;
 }
 
 /**
