@@ -453,6 +453,7 @@ function historyNavKeyboard(weekOffset) {
   for (let i = 0; i < months.length; i += 2) {
     rows.push(months.slice(i, i + 2));
   }
+  rows.push([{ text: '📅 Ввести дату', callback_data: 'history_date' }]);
   rows.push([{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]);
   return { inline_keyboard: rows };
 }
@@ -532,6 +533,67 @@ async function handleHistoryMonth(ctx) {
   }
 }
 
+/**
+ * P3 §13.3 — ввод даты истории: промпт `ДД.ММ` (год — текущий).
+ * Ставит флаг ожидания в ctx.session, следующий текст разберёт handleHistoryDateInput.
+ * @param {object} ctx
+ */
+async function handleHistoryDate(ctx) {
+  await ctx.answerCbQuery().catch(() => {});
+  try {
+    if (ctx.session) ctx.session.pendingHistoryDate = true;
+  } catch (_e) { void _e; }
+  const { HISTORY_DATE_PROMPT } = require('../utils/historyDate');
+  await ctx.reply(HISTORY_DATE_PROMPT);
+}
+
+/**
+ * P3 §13.3 — разбор введённой даты истории (текст вне сцен).
+ * При ошибке — переспрос; при успехе — компактный вид одного дня
+ * через getHistoryForRange(date, date) + formatHistoryCompact (скоуп как у остальной истории).
+ * @param {object} ctx
+ * @returns {Promise<boolean>} true если сообщение потреблено (был pending-флаг)
+ */
+async function handleHistoryDateInput(ctx) {
+  let pending = false;
+  try {
+    pending = !!(ctx.session && ctx.session.pendingHistoryDate);
+  } catch (_e) {
+    pending = false;
+  }
+  if (!pending) return false;
+  const text = ctx.message && ctx.message.text ? ctx.message.text.trim() : '';
+  // команды обрабатываются отдельно — флаг снимаем, сообщение не потребляем
+  if (!text || text.startsWith('/')) {
+    try {
+      if (ctx.session) ctx.session.pendingHistoryDate = false;
+    } catch (_e) { void _e; }
+    return false;
+  }
+  const { parseHistoryDateInput, HISTORY_DATE_ERROR } = require('../utils/historyDate');
+  let date;
+  try {
+    date = parseHistoryDateInput(text);
+  } catch (_e) {
+    await ctx.reply(HISTORY_DATE_ERROR);
+    return true;
+  }
+  try {
+    if (ctx.session) ctx.session.pendingHistoryDate = false;
+  } catch (_e) { void _e; }
+  try {
+    const { getHistoryForRange, formatHistoryCompact } = require('../utils/history');
+    const days = await getHistoryForRange(ctx.from.id, date, date);
+    await replyHistoryChunks(ctx, formatHistoryCompact(days), historyNavKeyboard(0));
+  } catch (error) {
+    logger.error('Ошибка при получении истории за дату:', error);
+    await ctx.reply('❌ Не удалось получить историю. Попробуйте позже.', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]] }
+    });
+  }
+  return true;
+}
+
 module.exports = {
   handleStart,
   handleHelp,
@@ -553,5 +615,7 @@ module.exports = {
   handleProfileReset,
   handleHistory,
   handleHistoryWeek,
-  handleHistoryMonth
+  handleHistoryMonth,
+  handleHistoryDate,
+  handleHistoryDateInput
 };

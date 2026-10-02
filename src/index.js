@@ -35,7 +35,9 @@ const {
   handleProfileToggleScope,
   handleHistory,
   handleHistoryWeek,
-  handleHistoryMonth
+  handleHistoryMonth,
+  handleHistoryDate,
+  handleHistoryDateInput
 } = require('./handlers/commands');
 
 // Регистрация сцен
@@ -58,6 +60,22 @@ bot.action('homework_week', handleHomeworkWeek);
 bot.action('history', handleHistory);
 bot.action(/history_week:(\d+)/, handleHistoryWeek);
 bot.action(/history_month:(\d{4}-\d{2})/, handleHistoryMonth);
+bot.action('history_date', handleHistoryDate);
+// Ввод даты истории (текст вне сцен; внутри сцен — пропуск, чтобы не мешать визардам)
+bot.on('text', async (ctx, next) => {
+  try {
+    if (ctx.scene && ctx.scene.current) {
+      await next();
+      return;
+    }
+    const consumed = await handleHistoryDateInput(ctx);
+    if (!consumed) await next();
+  } catch (_e) {
+    try {
+      await next();
+    } catch (_e2) { void _e2; }
+  }
+});
 bot.action('current_lesson', handleCurrentLesson);
 bot.action('manage_schedule', handleManageSchedule);
 bot.action('admin_manage', handleAdminManage);

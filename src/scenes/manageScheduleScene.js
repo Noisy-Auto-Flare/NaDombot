@@ -48,8 +48,8 @@ const manageScheduleScene = new Scenes.WizardScene(
   'manageSchedule',
   async (ctx) => {
     if (ctx.callbackQuery && ctx.callbackQuery.data === 'back_to_menu') {
-      await ctx.answerCbQuery();
-      return ctx.scene.leave();
+      const { leaveToMenu } = require('../utils/navigation');
+      return leaveToMenu(ctx);
     }
     if (!isAdmin(ctx)) {
       await ctx.reply('❌ У вас нет прав администратора');
@@ -63,7 +63,10 @@ const manageScheduleScene = new Scenes.WizardScene(
     await ctx.answerCbQuery();
     const action = ctx.callbackQuery.data;
 
-    if (action === 'back_to_menu') return ctx.scene.leave();
+    if (action === 'back_to_menu') {
+      const { leaveToMenu } = require('../utils/navigation');
+      return leaveToMenu(ctx);
+    }
 
     // --- Admin main menu navigation ---
     if (action === 'admin_manage') {
@@ -237,7 +240,11 @@ const manageScheduleScene = new Scenes.WizardScene(
     if (ctx.callbackQuery) {
       await ctx.answerCbQuery().catch(() => {});
       const a = ctx.callbackQuery.data;
-      if (a === 'back_to_menu' || a === 'schedule_cancel') {
+      if (a === 'back_to_menu') {
+        const { leaveToMenu } = require('../utils/navigation');
+        return leaveToMenu(ctx);
+      }
+      if (a === 'schedule_cancel') {
         await ctx.reply('❌ Действие отменено.', backToMenuKeyboard);
         return ctx.scene.leave();
       }

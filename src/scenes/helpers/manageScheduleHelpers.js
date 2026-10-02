@@ -4,7 +4,7 @@ const scheduleService = require('../../services/scheduleService');
 const lessonTimeService = require('../../services/LessonTimeService');
 const { parseLessonInput, parseRoomInput } = require('../../utils/scheduleValidator');
 const { validateTimeRange } = require('../../utils/lessonTimeValidator');
-const { cancelKeyboard, backKeyboard, lessonsManageKeyboard } = require('../../utils/keyboards');
+const { cancelKeyboard, backKeyboard, lessonsManageKeyboard, adminBackKeyboard } = require('../../utils/keyboards');
 const { setQuickPickThreshold } = require('../../utils/quickPickSettings');
 const { normalizeSubject } = require('../../utils/subjectNormalizer');
 
@@ -792,11 +792,11 @@ async function handleStats(ctx) {
     const withoutProfile = summary.withoutProfile;
     const classCountsStr = classParts || '—';
     const msg = `📊 Всего ${total}, ${classCountsStr}, без профиля ${withoutProfile}, ${subgroupLabel || 'подгрупп 0'}`;
-    await ctx.reply(`📊 Статистика\n${msg}\n\nАктивных за 24ч: ${summary.active24h}`, backKeyboard);
+    await ctx.reply(`📊 Статистика\n${msg}\n\nАктивных за 24ч: ${summary.active24h}`, adminBackKeyboard);
     return ctx.wizard.back();
   } catch (e) {
     logger.error('handleStats error', e);
-    await ctx.reply('❌ Ошибка загрузки статистики.', backKeyboard);
+    await ctx.reply('❌ Ошибка загрузки статистики.', adminBackKeyboard);
     return ctx.wizard.back();
   }
 }
@@ -914,7 +914,7 @@ async function handleUsersList(ctx, page = 0) {
   try { total = await User.count(); } catch (_e) { total = users.length; }
 
   if (users.length === 0 && targetPage === 0) {
-    await ctx.reply('📊 Пользователей пока нет.', backKeyboard);
+    await ctx.reply('📊 Пользователей пока нет.', adminBackKeyboard);
     return;
   }
   if (users.length === 0 && targetPage > 0) {
@@ -922,7 +922,7 @@ async function handleUsersList(ctx, page = 0) {
       reply_markup: {
         inline_keyboard: [
           [{ text: '◀️ Назад', callback_data: `users_page:${targetPage - 1}` }],
-          [{ text: '🔙 Назад', callback_data: 'schedule_back' }],
+          [{ text: '🔙 Назад', callback_data: 'admin_back' }],
         ],
       },
     });
@@ -954,7 +954,7 @@ async function handleUsersList(ctx, page = 0) {
   if (hasPrev) navRow.push({ text: '◀️ Назад', callback_data: `users_page:${targetPage - 1}` });
   if (hasNext) navRow.push({ text: '▶️ Вперед', callback_data: `users_page:${targetPage + 1}` });
   if (navRow.length) keyboard.push(navRow);
-  keyboard.push([{ text: '🔙 Назад', callback_data: 'schedule_back' }]);
+  keyboard.push([{ text: '🔙 Назад', callback_data: 'admin_back' }]);
 
   await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });
 }
@@ -989,7 +989,7 @@ async function handleUserDetail(ctx) {
   if (!userId && ctx.match && ctx.match[1]) userId = ctx.match[1];
 
   if (!userId) {
-    await ctx.reply('❌ Не указан ID пользователя.', backKeyboard);
+    await ctx.reply('❌ Не указан ID пользователя.', adminBackKeyboard);
     return;
   }
 
@@ -999,12 +999,12 @@ async function handleUserDetail(ctx) {
     detail = await getUserDetail(userId);
   } catch (e) {
     logger.error('handleUserDetail getUserDetail error', e);
-    await ctx.reply('❌ Ошибка загрузки пользователя.', backKeyboard);
+    await ctx.reply('❌ Ошибка загрузки пользователя.', adminBackKeyboard);
     return;
   }
   if (!detail || !detail.user) {
     await ctx.reply(`❌ Пользователь ${userId} не найден.`, {
-      reply_markup: { inline_keyboard: [[{ text: '🔙 К списку', callback_data: `users_page:${page}` }], [{ text: '🔙 Назад', callback_data: 'schedule_back' }]] },
+      reply_markup: { inline_keyboard: [[{ text: '🔙 К списку', callback_data: `users_page:${page}` }], [{ text: '🔙 Назад', callback_data: 'admin_back' }]] },
     });
     return;
   }
@@ -1045,7 +1045,7 @@ async function handleUserDetail(ctx) {
 
   const keyboard = [
     [{ text: '🔙 К списку', callback_data: `users_page:${page}` }],
-    [{ text: '🔙 Назад', callback_data: 'schedule_back' }],
+    [{ text: '🔙 Назад', callback_data: 'admin_back' }],
   ];
 
   await ctx.reply(text, { reply_markup: { inline_keyboard: keyboard } });

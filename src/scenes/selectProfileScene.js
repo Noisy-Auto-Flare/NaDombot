@@ -5,6 +5,17 @@ const { Track, Subgroup } = require('../models');
 
 const CANCEL_MSG = '❌ Выбор отменен, вы сможете выбрать позже через /profile';
 
+const CANCEL_NAV_KEYBOARD = {
+  reply_markup: {
+    inline_keyboard: [
+      [
+        { text: '👤 Выбрать профиль', callback_data: 'profile' },
+        { text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }
+      ]
+    ]
+  }
+};
+
 const SCOPE_OWN = 'select_scope:own';
 const SCOPE_ALL = 'select_scope:all';
 
@@ -33,7 +44,6 @@ function buildSubgroupKeyboard(subgroups) {
   for (const s of subgroups) {
     kb.push([{ text: s.teacher || s.name || s.id, callback_data: `select_subgroup:${s.id}` }]);
   }
-  kb.push([{ text: 'Без группы/Все', callback_data: 'select_subgroup:null' }]);
   kb.push([{ text: '👀 Видеть всё', callback_data: SCOPE_ALL }]);
   kb.push([{ text: '❌ Отменить', callback_data: 'schedule_cancel' }]);
   return kb;
@@ -368,7 +378,7 @@ const selectProfileScene = new Scenes.WizardScene(
       const data = ctx.callbackQuery.data;
       if (data === 'schedule_cancel' || data === 'back_to_menu') {
         await ctx.answerCbQuery().catch(() => {});
-        await ctx.reply(CANCEL_MSG);
+        await ctx.reply(CANCEL_MSG, CANCEL_NAV_KEYBOARD);
         return ctx.scene.leave();
       }
       if (data.startsWith('select_class:')) {
@@ -398,7 +408,7 @@ const selectProfileScene = new Scenes.WizardScene(
       const data = ctx.callbackQuery.data;
       if (data === 'schedule_cancel' || data === 'back_to_menu') {
         await ctx.answerCbQuery().catch(() => {});
-        await ctx.reply(CANCEL_MSG);
+        await ctx.reply(CANCEL_MSG, CANCEL_NAV_KEYBOARD);
         return ctx.scene.leave();
       }
       if (data === SCOPE_OWN) {
@@ -419,7 +429,7 @@ const selectProfileScene = new Scenes.WizardScene(
       const data = ctx.callbackQuery.data;
       if (data === 'schedule_cancel' || data === 'back_to_menu') {
         await ctx.answerCbQuery().catch(() => {});
-        await ctx.reply(CANCEL_MSG);
+        await ctx.reply(CANCEL_MSG, CANCEL_NAV_KEYBOARD);
         return ctx.scene.leave();
       }
       if (data === SCOPE_ALL) {
@@ -529,7 +539,7 @@ const selectProfileScene = new Scenes.WizardScene(
       const data = ctx.callbackQuery.data;
       if (data === 'schedule_cancel' || data === 'back_to_menu') {
         await ctx.answerCbQuery().catch(() => {});
-        await ctx.reply(CANCEL_MSG);
+        await ctx.reply(CANCEL_MSG, CANCEL_NAV_KEYBOARD);
         return ctx.scene.leave();
       }
       if (data === SCOPE_ALL) {
@@ -547,3 +557,7 @@ const selectProfileScene = new Scenes.WizardScene(
 );
 
 module.exports = selectProfileScene;
+module.exports.buildSubgroupKeyboard = buildSubgroupKeyboard;
+module.exports.buildTrackKeyboard = buildTrackKeyboard;
+module.exports.buildClassKeyboard = buildClassKeyboard;
+module.exports.CANCEL_NAV_KEYBOARD = CANCEL_NAV_KEYBOARD;
