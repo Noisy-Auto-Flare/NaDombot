@@ -61,7 +61,7 @@ describe('P2 merge-рендер', () => {
     expect(text).toContain('📝 стр. 42 упр. 5\n\n   📝 повторить §12');
     // общий урок без фасетов — тега нет
     expect(text).not.toContain('[');
-    expect(text).toContain('6. Биология — каб. 3026');
+    expect(text).toContain('6. Биология');
   });
 
   test('варианты аудиторий: соседние строки, каждая с обязательным тегом', () => {
@@ -74,8 +74,8 @@ describe('P2 merge-рендер', () => {
       homeworks: [mkHw(11, 'сделать прогу', '2026-10-04T10:00:00.000Z'), mkHw(12, 'читать §3', '2026-10-04T11:00:00.000Z')]
     };
     const text = formatHomeworkMerged(data, TAG_CTX);
-    expect(text).toContain('2. Информатика — каб. 1058 [Тех]');
-    expect(text).toContain('2. Обществознание — каб. 3021 [Соц.-эконом.]');
+    expect(text).toContain('2. Информатика [Тех]');
+    expect(text).toContain('2. Обществознание [Соц.-эконом.]');
     expect(text).toContain('📝 сделать прогу');
     expect(text).toContain('📝 читать §3');
   });
@@ -90,8 +90,8 @@ describe('P2 merge-рендер', () => {
       homeworks: []
     };
     const text = formatHomeworkMerged(data, TAG_CTX);
-    expect(text).toContain('3. Английский — каб. 4005 [Белова]');
-    expect(text).toContain('3. Английский — каб. библ [Фирфарова]');
+    expect(text).toContain('3. Английский [Белова]');
+    expect(text).toContain('3. Английский [Фирфарова]');
   });
 
   test('formatHomework — тот же merged-рендер (поведение OFF)', () => {

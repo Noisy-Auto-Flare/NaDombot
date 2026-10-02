@@ -281,10 +281,11 @@ function formatHomeworkMerged(homeworkData, tagCtx = null) {
   });
 
   for (const schedule of ordered) {
-    const roomSuffix = schedule.room ? ` — каб. ${schedule.room}` : '';
+    // Кабинеты в списках ДЗ не показываем (только в «текущем уроке»);
+    // варианты различаются тегами аудитории.
     const tag = buildAudienceTag(schedule, tagCtx || {}, tagCtx || {});
     const tagSuffix = tag ? ` ${tag}` : '';
-    result += `${schedule.lessonNumber}. ${schedule.subjectName}${roomSuffix}${tagSuffix}\n`;
+    result += `${schedule.lessonNumber}. ${schedule.subjectName}${tagSuffix}\n`;
     const texts = merged.get(schedule.id);
     if (texts && texts.length > 0) {
       result += texts.map((t) => `   📝 ${t}`).join('\n\n') + '\n\n';

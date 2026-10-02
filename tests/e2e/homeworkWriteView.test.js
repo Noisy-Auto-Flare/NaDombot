@@ -184,8 +184,8 @@ describe('A3: наблюдатель видит обе строки с тега�
     const data = await getHomeworkForDate(OBS, MONDAY);
     const tagCtx = await getTagContext();
     const text = formatHomeworkMerged(data, tagCtx);
-    expect(text).toContain('2. Информатика — каб. 1058 [Тех]');
-    expect(text).toContain('2. Информатика — каб. 2040 [Соц.-эконом.]');
+    expect(text).toContain('2. Информатика [Тех]');
+    expect(text).toContain('2. Информатика [Соц.-эконом.]');
     expect(text).toContain('прога тех');
     expect(text).toContain('прога соц');
   });
@@ -194,8 +194,8 @@ describe('A3: наблюдатель видит обе строки с тега�
     const data = await getHomeworkForDate(OBS, WEDNESDAY);
     const tagCtx = await getTagContext();
     const text = formatHomeworkMerged(data, tagCtx);
-    expect(text).toContain('3. Английский — каб. 4005 [Белова]');
-    expect(text).toContain('3. Английский — каб. библ [Фирфарова]');
+    expect(text).toContain('3. Английский [Белова]');
+    expect(text).toContain('3. Английский [Фирфарова]');
     expect(text).toContain('белова текст');
     expect(text).toContain('фирфарова текст');
   });

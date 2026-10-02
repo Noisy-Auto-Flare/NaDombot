@@ -76,8 +76,8 @@ describe('A7: мастер ВЫКЛ — все видят склейку, воп
     );
     const tagCtx = await getTagContext();
     const text = formatHomeworkMerged(data, tagCtx);
-    expect(text).toContain('2. Информатика — каб. 1058 [Тех]');
-    expect(text).toContain('2. Информатика — каб. 2040 [Соц.-эконом.]');
+    expect(text).toContain('2. Информатика [Тех]');
+    expect(text).toContain('2. Информатика [Соц.-эконом.]');
     expect(text).toContain('био общая');
   });
 
