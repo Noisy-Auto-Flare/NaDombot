@@ -21,7 +21,7 @@ const TAG_CTX = {
   ]),
   subgroupNames: new Map([
     ['belova', { name: 'Белова', teacher: 'Белова И.В.' }],
-    ['petrova', { name: 'Петрова', teacher: 'Петрова А.С.' }]
+    ['ferfarova', { name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна' }]
   ])
 };
 
@@ -80,18 +80,18 @@ describe('P2 merge-рендер', () => {
     expect(text).toContain('📝 читать §3');
   });
 
-  test('английские подгруппы: теги Белова/Петрова', () => {
+  test('английские подгруппы: теги Белова/Ферфарова', () => {
     const data = {
       date: new Date(2026, 9, 7, 12, 0, 0),
       schedules: [
         mkSchedule({ id: 21, lessonNumber: 3, subjectName: 'Английский', room: '4005', subgroupId: 'belova' }),
-        mkSchedule({ id: 22, lessonNumber: 3, subjectName: 'Английский', room: 'библ', subgroupId: 'petrova' })
+        mkSchedule({ id: 22, lessonNumber: 3, subjectName: 'Английский', room: 'библ', subgroupId: 'ferfarova' })
       ],
       homeworks: []
     };
     const text = formatHomeworkMerged(data, TAG_CTX);
     expect(text).toContain('3. Английский — каб. 4005 [Белова]');
-    expect(text).toContain('3. Английский — каб. библ [Петрова]');
+    expect(text).toContain('3. Английский — каб. библ [Ферфарова]');
   });
 
   test('formatHomework — тот же merged-рендер (поведение OFF)', () => {

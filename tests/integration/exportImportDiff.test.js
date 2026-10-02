@@ -99,25 +99,25 @@ function canonical(dump) {
 beforeAll(async () => {
   await syncDatabase();
 
-  // Foundation (Class/Track/belova/petrova) уже засеян syncDatabase — только добивка
+  // Foundation (Class/Track/belova/ferfarova) уже засеян syncDatabase — только добивка
   await Class.findOrCreate({ where: { id: '10А' }, defaults: { id: '10А', grade: 10, letter: 'А', enabled: true } });
   await Track.findOrCreate({ where: { id: 'tech', classId: '10А' }, defaults: { id: 'tech', classId: '10А', name: 'Технологический', isCommon: false } });
   await Track.findOrCreate({ where: { id: 'soc', classId: '10А' }, defaults: { id: 'soc', classId: '10А', name: 'Социально-экономический', isCommon: false } });
   await Subgroup.findOrCreate({ where: { id: 'belova' }, defaults: { id: 'belova', division: 'Английский язык', name: 'Белова', teacher: 'Белова И.В.', subject: 'английский', classId: null, active: true } });
-  await Subgroup.findOrCreate({ where: { id: 'petrova' }, defaults: { id: 'petrova', division: 'Английский язык', name: 'Петрова', teacher: 'Петрова А.С.', subject: 'английский', classId: null, active: true } });
+  await Subgroup.findOrCreate({ where: { id: 'ferfarova' }, defaults: { id: 'ferfarova', division: 'Английский язык', name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна', subject: 'английский', classId: null, active: true } });
   // Доводим foundation-строки до «мигрированного» вида с полными ФИО
-  await Subgroup.update({ division: 'Английский язык', name: 'Белова', teacher: 'Белова И.В.' }, { where: { id: 'belova' } });
-  await Subgroup.update({ division: 'Английский язык', name: 'Петрова', teacher: 'Петрова А.С.' }, { where: { id: 'petrova' } });
+  await Subgroup.update({ division: 'Английский язык', name: 'Белова', teacher: 'Белова Ирина Николаевна' }, { where: { id: 'belova' } });
+  await Subgroup.update({ division: 'Английский язык', name: 'Ферфарова', teacher: 'Ферфарова Валерия Михайловна' }, { where: { id: 'ferfarova' } });
   await Subgroup.create({ id: 'draving', division: 'Черчение/Информатика', name: 'Чертёжная', teacher: null, subject: null, classId: null, active: true });
 
-  // Ортогональные аудитории в одном слоте: Пн-2 tech/soc, Ср-3 belova/petrova,
+  // Ортогональные аудитории в одном слоте: Пн-2 tech/soc, Ср-3 belova/ferfarova,
   // черчение (draving) + информатика (tech) в одном слоте Чт-4
   const rows = await Schedule.bulkCreate(
     [
       { dayOfWeek: 0, lessonNumber: 2, subjectName: 'Информатика', room: '1058', classId: '10А', trackId: 'tech', subgroupId: null },
       { dayOfWeek: 0, lessonNumber: 2, subjectName: 'Обществознание', room: '3021', classId: '10А', trackId: 'soc', subgroupId: null },
       { dayOfWeek: 2, lessonNumber: 3, subjectName: 'Английский', room: '4005', classId: '10А', trackId: null, subgroupId: 'belova' },
-      { dayOfWeek: 2, lessonNumber: 3, subjectName: 'Английский', room: 'библ', classId: '10А', trackId: null, subgroupId: 'petrova' },
+      { dayOfWeek: 2, lessonNumber: 3, subjectName: 'Английский', room: 'библ', classId: '10А', trackId: null, subgroupId: 'ferfarova' },
       { dayOfWeek: 3, lessonNumber: 4, subjectName: 'Черчение', room: '4010', classId: '10А', trackId: null, subgroupId: 'draving' },
       { dayOfWeek: 3, lessonNumber: 4, subjectName: 'Информатика', room: '1058', classId: '10А', trackId: 'tech', subgroupId: null }
     ],
@@ -160,7 +160,7 @@ describe('export→import→diff (P1 item 6)', () => {
     const belova = after.subgroups.find((s) => s.id === 'belova');
     expect(belova.division).toBe('Английский язык');
     expect(belova.name).toBe('Белова');
-    expect(belova.teacher).toBe('Белова И.В.');
+    expect(belova.teacher).toBe('Белова Ирина Николаевна');
     expect(belova.teacherName).toBeUndefined();
     const draving = after.subgroups.find((s) => s.id === 'draving');
     expect(draving.subject).toBeNull();
