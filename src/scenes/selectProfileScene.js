@@ -8,10 +8,8 @@ const CANCEL_MSG = '❌ Выбор отменен, вы сможете выбр�
 const CANCEL_NAV_KEYBOARD = {
   reply_markup: {
     inline_keyboard: [
-      [
-        { text: '👤 Выбрать профиль', callback_data: 'profile' },
-        { text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }
-      ]
+      [{ text: '👤 Выбрать профиль', callback_data: 'profile' }],
+      [{ text: '🔙 Вернуться в меню', callback_data: 'back_to_menu' }]
     ]
   }
 };
