@@ -40,6 +40,9 @@ const {
   handleHistoryDateInput
 } = require('./handlers/commands');
 
+const { handleTextFallback } = require('./handlers/textFallback');
+const { handleStaleCallback } = require('./handlers/staleCallback');
+
 // Регистрация сцен
 const stage = new Scenes.Stage([addHomeworkScene, addHomeworkOnDateScene, manageScheduleScene, selectProfileScene]);
 bot.use(stage.middleware());
@@ -69,7 +72,10 @@ bot.on('text', async (ctx, next) => {
       return;
     }
     const consumed = await handleHistoryDateInput(ctx);
-    if (!consumed) await next();
+    if (consumed) return;
+    // Текст вне сцен не молчит: совпадение с предметом → подсказка с кнопками, иначе — хинт
+    const textConsumed = await handleTextFallback(ctx);
+    if (!textConsumed) await next();
   } catch (_e) {
     try {
       await next();
@@ -142,6 +148,11 @@ bot.action('profile_edit_track', handleProfileEditTrack);
 bot.action('profile_edit_subgroup', handleProfileEditSubgroup);
 bot.action('profile_reset', handleProfileReset);
 bot.action('profile_toggle_scope', handleProfileToggleScope);
+
+// Сеть безопасности для протухших кнопок (G1): регистрируется ПОСЛЕДНИМ —
+// Telegraf останавливает цепочку после обработанного bot.action, сюда доходят
+// только необработанные колбэки (например кнопки мертвых сессий после рестарта).
+bot.on('callback_query', handleStaleCallback);
 
 // Обработка ошибок
 bot.catch((err, ctx) => {

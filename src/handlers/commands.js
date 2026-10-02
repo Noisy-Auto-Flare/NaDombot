@@ -402,8 +402,8 @@ async function handleCurrentLesson(ctx) {
           profile = null;
         }
         if (profile) {
-          const { isVisible } = require('../utils/audience');
-          todayRows = todayRows.filter((r) => isVisible(r, profile));
+          const { isVisibleWithScope } = require('../utils/audience');
+          todayRows = todayRows.filter((r) => isVisibleWithScope(r, profile, enabled));
         }
       }
     } catch (_e) {

@@ -8,7 +8,8 @@ const { buildAudienceTag } = require('./audience');
  * Получить последние прошедшие уроки сегодня (до 4)
  * Упорядочены от раннего к позднему, нижняя — самый последний перед now.
  * При переданном профиле и включённом флаге multiprofile — фильтрует через
- * isVisible (чужой аудитории нет в быстрых кнопках); без профиля/флага — как раньше.
+ * isVisibleWithScope (чужой аудитории нет в быстрых кнопках, наблюдатель
+ * scope='all' видит все треки); без профиля/флага — как раньше.
  * Логика passed/threshold/limit — без изменений.
  * @param {{limit?:number, now?:Date, profile?:object|null}} options
  * @returns {Promise<Array>} массив Schedule (до limit штук)
@@ -38,8 +39,8 @@ async function getRecentLessonRows({ limit = 4, now = new Date(), profile = null
     }
     if (enabled) {
       try {
-        const { isVisible } = require('./audience');
-        visibleRows = todayRows.filter((r) => isVisible(r, profile));
+        const { isVisibleWithScope } = require('./audience');
+        visibleRows = todayRows.filter((r) => isVisibleWithScope(r, profile, enabled));
       } catch (_e) {
         visibleRows = todayRows;
       }

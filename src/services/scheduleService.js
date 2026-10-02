@@ -107,7 +107,7 @@ async function isSlotTaken(dayOfWeek, lessonNumber, audienceOrExcludeId = null, 
  * Case-insensitive find by subject (Cyrillic-safe).
  * Поддерживает старый вызов findBySubjectNormalized(input, dayNumber)
  * и новый findBySubjectNormalized(input, {classId,trackId,subgroupId,dayOfWeek})
- * Фильтрует по аудитории через isVisible если audience передан и flag включен.
+ * Фильтрует по аудитории через isVisibleWithScope если audience передан и flag включен.
  * @param {string} input
  * @param {object|number|null} options
  * @param {number|null} maybeDayOfWeek - для поддержки 3-arg вызова
