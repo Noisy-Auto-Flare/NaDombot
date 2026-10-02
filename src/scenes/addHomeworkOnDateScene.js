@@ -2,7 +2,7 @@ const logger = require('../utils/logger');
 const { Scenes } = require('telegraf');
 const { Homework } = require('../models');
 const scheduleService = require('../services/scheduleService');
-const { getMoscowNow, getMoscowDayOfWeek } = require('../utils/moscowTime');
+const { getMoscowNow, getCalendarDayOfWeek, parseCalendarDate } = require('../utils/moscowTime');
 const { formatDate, getDayName } = require('../utils/dateUtils');
 const { getRecentLessonRows, buildQuickPickLabel } = require('../utils/recentLessons');
 const { getTagContext } = require('../utils/scheduleUtils');
@@ -73,7 +73,8 @@ function buildDateKeyboard(schedules, baseDate, isAll = false) {
     const d = new Date(baseDate);
     d.setDate(baseDate.getDate() + i);
 
-    const dayOfWeek = getMoscowDayOfWeek(d);
+    // d — календарная дата: день её собственных Y-M-D
+    const dayOfWeek = getCalendarDayOfWeek(d);
     const matching = schedules.filter((s) => s.dayOfWeek === dayOfWeek).sort((a, b) => a.lessonNumber - b.lessonNumber);
 
     if (matching.length === 0) continue;
@@ -118,7 +119,7 @@ function humanDateLabel(isoDate) {
     const dt = new Date(y, m - 1, d, 12, 0, 0, 0);
     const dd = String(dt.getDate()).padStart(2, '0');
     const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    return `${getShortDayName(getMoscowDayOfWeek(dt))}, ${dd}.${mm}`;
+    return `${getShortDayName(getCalendarDayOfWeek(dt))}, ${dd}.${mm}`;
   } catch (_e) {
     return String(isoDate);
   }
@@ -135,7 +136,7 @@ async function proceedWithScheduleDate(ctx, schedule, date) {
   ctx.wizard.state.date = date;
   ctx.wizard.state.selectedSchedule = schedule;
 
-  const dateStr = date.toISOString().split('T')[0];
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   let rows = [];
   try {
     rows = await fetchExistingHomework(schedule.id, dateStr);
@@ -145,7 +146,8 @@ async function proceedWithScheduleDate(ctx, schedule, date) {
   }
   if (!rows || rows.length === 0) {
     ctx.wizard.state.pendingMode = 'add';
-    const dayOfWeek = getMoscowDayOfWeek(date);
+    // date — календарная: день её собственных Y-M-D
+    const dayOfWeek = getCalendarDayOfWeek(date);
     await ctx.reply(
       `📝 Теперь введите текст домашнего задания для ${schedule.subjectName} на ${getDayName(dayOfWeek)}, ${formatDate(date)} (${schedule.lessonNumber} урок):`,
       {
@@ -345,8 +347,9 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         const subjectName = ctx.wizard.state.subjectName;
         try {
           const schedules = await scheduleService.findBySubjectNormalized(subjectName, await resolveAudienceOpts(ctx));
-          const date = new Date(isoDate);
-          const dayOfWeek = getMoscowDayOfWeek(date);
+          const date = parseCalendarDate(isoDate);
+      // date — календарная: день её собственных Y-M-D
+      const dayOfWeek = getCalendarDayOfWeek(date);
           const matching = (schedules || [])
             .filter((s) => s.dayOfWeek === dayOfWeek)
             .sort((a, b) => a.lessonNumber - b.lessonNumber);
@@ -381,7 +384,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
             return;
           }
           ctx.wizard.state.pendingVariants = null;
-          const date = new Date(isoDate);
+          const date = parseCalendarDate(isoDate);
           await proceedWithScheduleDate(ctx, schedule, date);
           return;
         } catch (error) {
@@ -429,7 +432,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           }
 
           // Сохраняем выбор
-          const date = new Date(isoDate);
+          const date = parseCalendarDate(isoDate);
           // subjectName уже сохранён на этапе ввода предмета
 
           await ctx.answerCbQuery();
@@ -567,7 +570,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
 
     if (pendingMode === 'replace') {
       try {
-        const dateStr = date.toISOString().split('T')[0];
+        // Строка даты из тех же локальных Y-M-D (инвариант с заголовком и расписанием)
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         const res = await replaceHomeworkConditional({
           scheduleId,
           dateStr,
@@ -577,7 +581,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
           userId: ctx.from.id
         });
         if (res.ok) {
-          const dayOfWeek = getMoscowDayOfWeek(date);
+          // date — календарная: день её собственных Y-M-D
+          const dayOfWeek = getCalendarDayOfWeek(date);
           const lessonNumber = selectedSchedule ? selectedSchedule.lessonNumber : '';
           await ctx.reply(
             `✅ Домашнее задание заменено!\n\n` +
@@ -625,7 +630,7 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
       await Homework.create({
         userId: ctx.from.id,
         scheduleId: scheduleId,
-        date: date.toISOString().split('T')[0],
+        date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
         content: content
       });
       // P3: счётчик добавленных ДЗ (путь «Заменить» — не инкрементит, создания нет)
@@ -636,7 +641,8 @@ const addHomeworkOnDateScene = new Scenes.WizardScene(
         void _hc;
       }
 
-      const dayOfWeek = getMoscowDayOfWeek(date);
+      // date — календарная: день её собственных Y-M-D
+    const dayOfWeek = getCalendarDayOfWeek(date);
       const lessonNumber = selectedSchedule ? selectedSchedule.lessonNumber : '';
 
       await ctx.reply(

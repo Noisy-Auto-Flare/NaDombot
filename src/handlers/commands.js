@@ -3,7 +3,7 @@ const { getHomeworkForDate, getHomeworkForWeek, formatHomework, getTagContext, M
 const { getNextWorkDay } = require('../utils/dateUtils');
 const { toggleHomeworkVisibility, getHomeworkVisibilityLabel } = require('../utils/settings');
 const { isAdmin } = require('../middleware/isAdmin');
-const { getMoscowNow } = require('../utils/moscowTime');
+const { getMoscowNow, getMoscowToday } = require('../utils/moscowTime');
 const { resolveCurrentLesson } = require('../utils/lessonResolver');
 const { formatCurrentLessonMessage } = require('../utils/lessonFormatter');
 const LessonTimeService = require('../services/LessonTimeService');
@@ -292,7 +292,8 @@ async function handleAddHomeworkOnDate(ctx) {
 async function handleHomeworkTomorrow(ctx) {
   await ctx.answerCbQuery();
   try {
-    const nextWorkDay = getNextWorkDay(new Date());
+    // База «завтра» — московская календарная дата, не instant «сейчас»
+    const nextWorkDay = getNextWorkDay(getMoscowToday());
     const homeworkData = await getHomeworkForDate(ctx.from.id, nextWorkDay);
     const tagCtx = await getTagContext().catch(() => null);
     const formatted = formatHomework(homeworkData, tagCtx);
@@ -310,7 +311,8 @@ async function handleHomeworkTomorrow(ctx) {
 async function handleHomeworkWeek(ctx) {
   await ctx.answerCbQuery();
   try {
-    const today = new Date();
+    // База недели — московская календарная дата, не instant «сейчас»
+    const today = getMoscowToday();
     const weekHomework = await getHomeworkForWeek(ctx.from.id, today);
     if (weekHomework.length === 0) {
       await ctx.reply('📅 На этой неделе нет домашнего задания.', {

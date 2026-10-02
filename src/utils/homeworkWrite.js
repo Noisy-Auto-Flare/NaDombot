@@ -1,7 +1,7 @@
 const { Homework, User } = require('../models');
 const { getMoscowNow } = require('./moscowTime');
 const { formatDate, getDayName } = require('./dateUtils');
-const { getMoscowDayOfWeek } = require('./moscowTime');
+const { getCalendarDayOfWeek } = require('./moscowTime');
 
 /**
  * P2 §13 — показ существующего при записи + optimistic locking.
@@ -51,7 +51,8 @@ function formatAuthor(user, userId) {
  * @returns {Promise<string>}
  */
 async function formatExistingHomeworkText({ subjectName, date, rows }) {
-  const dayOfWeek = getMoscowDayOfWeek(date);
+  // date — календарная: день её собственных Y-M-D
+  const dayOfWeek = getCalendarDayOfWeek(date);
   const ids = [...new Set((rows || []).map((r) => r.userId))];
   const users = new Map();
   if (ids.length) {

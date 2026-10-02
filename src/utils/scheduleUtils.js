@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const { Schedule } = require('../models');
-const { getDayOfWeek, getNextDayOfWeek } = require('./dateUtils');
-const { getMoscowDayOfWeek } = require('./moscowTime');
+const { getNextDayOfWeek } = require('./dateUtils');
+const { getMoscowDayOfWeek, getCalendarDayOfWeek, getMoscowToday } = require('./moscowTime');
 const { getHomeworkVisibility, HOMEWORK_VISIBILITY_SHARED } = require('./settings');
 const { subjectsMatch } = require('./subjectNormalizer');
 const { isVisibleWithScope, buildAudienceTag } = require('./audience');
@@ -50,6 +50,7 @@ async function findNextLesson(subjectName, fromDate = new Date(), userProfile = 
     return null;
   }
 
+  // fromDate — instant «сейчас»: московский день МОМЕНТА (см. правило в moscowTime.js)
   const currentDayOfWeek = getMoscowDayOfWeek(fromDate);
   const currentDate = new Date(fromDate);
   currentDate.setHours(0, 0, 0, 0);
@@ -120,7 +121,8 @@ async function getScheduleForDay(dayOfWeek, userProfile = null) {
  */
 async function getHomeworkForDate(userId, date) {
   const { Homework, UserProfile } = require('../models');
-  const dayOfWeek = getMoscowDayOfWeek(date);
+  // date — КАЛЕНДАРНАЯ дата: будний день её собственных Y-M-D (не дня instant-момента)
+  const dayOfWeek = getCalendarDayOfWeek(date);
 
   // Резолвим профиль пользователя
   let userProfile = null;
@@ -140,7 +142,8 @@ async function getHomeworkForDate(userId, date) {
   const schedules = await getScheduleForDay(dayOfWeek, userProfile);
 
   const visibility = await getHomeworkVisibility();
-  const dateStr = date.toISOString().split('T')[0];
+  // Строка даты из тех же локальных Y-M-D, что и будний день выше (инвариант заголовка)
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
   const scheduleIds = schedules.map((s) => s.id);
 
@@ -183,9 +186,11 @@ async function getHomeworkForDate(userId, date) {
 /**
  * Получить домашнее задание на неделю
  */
-async function getHomeworkForWeek(userId, startDate = new Date()) {
+async function getHomeworkForWeek(userId, startDate) {
   const { getWeekDates } = require('./dateUtils');
-  const weekDates = getWeekDates(startDate);
+  // База недели — московская календарная дата, не instant «сейчас»
+  const base = startDate || getMoscowToday();
+  const weekDates = getWeekDates(base);
   const weekHomework = [];
 
   for (const date of weekDates) {
@@ -266,7 +271,8 @@ function formatHomeworkMerged(homeworkData, tagCtx = null) {
   const { date, schedules, homeworks } = homeworkData;
   const { formatDate, getDayName } = require('./dateUtils');
 
-  const dayOfWeek = getDayOfWeek(date);
+  // Заголовок — календарный день тех же Y-M-D даты (инвариант с расписанием и строками ДЗ)
+  const dayOfWeek = getCalendarDayOfWeek(date);
   let result = `📅 ${getDayName(dayOfWeek)}, ${formatDate(date)}\n\n`;
 
   if (!schedules || schedules.length === 0) {

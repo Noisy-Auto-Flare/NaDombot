@@ -90,6 +90,10 @@ afterAll(async () => {
 
 describe('A5-режим «моё»: запись своим через сцену', () => {
   test('tech пишет Биологию: предмет → ближайший урок → текст → строка в БД', async () => {
+    // Детерминизм: дата «ближайшего урока» считается от сегодня и может совпасть
+    // с фиксированным сидом MONDAY_STR (напр. запуск 02–04.10.2026 → 05.10).
+    // Чистим слот сценария, в конце восстанавливаем сид для A2/A4.
+    await Homework.destroy({ where: { scheduleId: bio.id, date: MONDAY_STR } });
     const { ctx, calls } = createMockCtx({ userId: TECH, firstName: 'Ivan' });
 
     await addHomeworkScene.steps[0](ctx);
@@ -109,6 +113,8 @@ describe('A5-режим «моё»: запись своим через сцен�
 
     const rows = await Homework.findAll({ where: { scheduleId: bio.id } });
     expect(rows.map((r) => r.content)).toContain('стр. 42 упр. 5');
+    // Восстанавливаем сид для A2/A4
+    await Homework.create({ userId: TECH, scheduleId: bio.id, date: MONDAY_STR, content: 'био от теха' });
   });
 });
 

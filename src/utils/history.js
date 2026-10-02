@@ -1,5 +1,6 @@
 const { getHomeworkForDate, mergeHomeworkBySchedule, splitMessageChunks } = require('./scheduleUtils');
-const { getMoscowNow } = require('./moscowTime');
+// Единственный источник getMoscowToday — moscowTime.js (здесь ре-экспорт для совместимости)
+const { getMoscowToday } = require('./moscowTime');
 
 /**
  * P3 §13.3 — История ДЗ вместо автоудаления.
@@ -25,16 +26,6 @@ const MONTH_NAMES = [
   'Ноябрь',
   'Декабрь'
 ];
-
-/**
- * Сегодня по Москве как локальный Date (полдень — без сдвигов суток).
- * @returns {Date}
- */
-function getMoscowToday() {
-  const { isoDate } = getMoscowNow();
-  const [y, m, d] = isoDate.split('-').map(Number);
-  return new Date(y, m - 1, d, 12, 0, 0, 0);
-}
 
 /**
  * YYYY-MM-DD по локальным частям даты.
