@@ -136,10 +136,10 @@ async function finalizeProfile(ctx, subgroupId) {
       // will be filled during flow
     }
   }
-  // scope: явный выбор из развилки → он; в edit-выборе конкретного поля → 'own';
-  // иначе сохранить исходный (setUserProfile сам сохранит существующий).
+  // scope: явный выбор из развилки → он; иначе сохранить исходный scope
+  // (тоггл profile_toggle_scope — единственный меняющий scope).
   const scopeChoice = ctx.wizard.state.scopeChoice;
-  const saveScope = scopeChoice || (editMode === 'track' || editMode === 'subgroup' ? 'own' : undefined);
+  const saveScope = scopeChoice || (original && original.scope) || 'own';
   try {
     await setUserProfile(ctx.from.id, { classId: saveClassId, trackId: saveTrackId, subgroupId: saveSubgroupId, scope: saveScope });
   } catch (e) {
@@ -299,7 +299,7 @@ const selectProfileScene = new Scenes.WizardScene(
           ctx.wizard.state.trackId = null;
           // if track not applicable, finish directly keeping other fields
           try {
-            await setUserProfile(ctx.from.id, { classId: prof.classId, trackId: null, subgroupId: prof.subgroupId, scope: 'own' });
+            await setUserProfile(ctx.from.id, { classId: prof.classId, trackId: null, subgroupId: prof.subgroupId, scope: (prof && prof.scope) || 'own' });
             await ctx.reply('✅ Профиль обновлен: ' + prof.classId + ' Общий ' + (prof.subgroupId || 'Без группы'));
             try {
               const { handleStart } = require('../handlers/commands');
@@ -464,7 +464,7 @@ const selectProfileScene = new Scenes.WizardScene(
           const finalClassId = original ? original.classId : ctx.wizard.state.classId;
           const finalSubgroupId = original ? original.subgroupId : null;
           try {
-            await setUserProfile(ctx.from.id, { classId: finalClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: 'own' });
+            await setUserProfile(ctx.from.id, { classId: finalClassId, trackId: finalTrackId, subgroupId: finalSubgroupId, scope: (original && original.scope) || 'own' });
             let trackLabel = finalTrackId || 'Общий';
             if (finalTrackId) {
               try {
@@ -516,7 +516,7 @@ const selectProfileScene = new Scenes.WizardScene(
             // directly save
             const finalSubgroupId = subgroupId === 'null' ? null : subgroupId;
             try {
-              await setUserProfile(ctx.from.id, { classId: original.classId, trackId: original.trackId, subgroupId: finalSubgroupId, scope: 'own' });
+              await setUserProfile(ctx.from.id, { classId: original.classId, trackId: original.trackId, subgroupId: finalSubgroupId, scope: (original && original.scope) || 'own' });
               let trackLabel = original.trackId || 'Общий';
               if (original.trackId) {
                 try {
